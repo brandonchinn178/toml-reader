@@ -19,7 +19,6 @@ import Data.Char (ord)
 import Data.Foldable (foldlM)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
-import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -46,7 +45,7 @@ parseTOML filename input =
 type Parser = Parsec Void Text
 
 type Key = NonEmpty Text
-type RawTable = Map Key Value
+type RawTable = [(Key, Value)]
 
 data TOMLDoc = TOMLDoc
   { rootTable :: RawTable
@@ -71,16 +70,15 @@ parseTOMLDocument = do
   return TOMLDoc{..}
 
 parseRawTable :: Parser RawTable
-parseRawTable =
-  fmap Map.fromList . many $ do
-    key <- parseKey
-    hspace
-    _ <- string "="
-    hspace
-    value <- parseValue
-    endOfLine
-    emptyLines
-    return (key, value)
+parseRawTable = many $ do
+  key <- parseKey
+  hspace
+  _ <- string "="
+  hspace
+  value <- parseValue
+  endOfLine
+  emptyLines
+  return (key, value)
 
 parseTableSection :: Parser TableSection
 parseTableSection = do
@@ -189,7 +187,7 @@ normalize TOMLDoc{..} = do
   foldlM (flip mergeTableSection) root subTables
   where
     flattenTable :: RawTable -> Either TOMLError Table
-    flattenTable = foldlM (\t (k, v) -> insertAt k v t) Map.empty . Map.toList
+    flattenTable = foldlM (\t (k, v) -> insertAt k v t) Map.empty
 
     mergeTableSection :: TableSection -> Table -> Either TOMLError Table
     mergeTableSection TableSection{..} baseTable = do

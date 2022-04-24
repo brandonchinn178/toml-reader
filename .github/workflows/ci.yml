@@ -272,7 +272,6 @@ jobs:
             -skip invalid/key/bare-invalid-character
             -skip invalid/key/dotted-redefine-table
             -skip invalid/key/duplicate-keys
-            -skip invalid/key/duplicate
             -skip invalid/key/empty
             -skip invalid/key/escape
             -skip invalid/key/hash
