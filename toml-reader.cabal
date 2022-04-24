@@ -43,9 +43,9 @@ library
     ghc-options: -Wnoncanonical-monadfail-instances
   default-language: Haskell2010
 
-test-suite toml-validator
+test-suite parser-validator
   type: exitcode-stdio-1.0
-  main-is: Validate.hs
+  main-is: ValidateParser.hs
   other-modules:
       Paths_toml_reader
   hs-source-dirs:

@@ -14,7 +14,8 @@ import System.Directory (findExecutable)
 import System.Environment (getArgs, getExecutablePath)
 import System.Process (callProcess)
 
-import TOML (Value (..), decode)
+import TOML (Value (..))
+import TOML.Parser (parseTOML)
 
 #if MIN_VERSION_aeson(2,0,0)
 import qualified Data.Aeson.Key as Key
@@ -51,7 +52,7 @@ runTomlTest args = do
 checkTOML :: IO ()
 checkTOML = do
   input <- Text.getContents
-  output <- either (error . show) return $ decode input
+  output <- either (error . show) return $ parseTOML input
   Char8.putStrLn $ Aeson.encode $ toTaggedJSON output
 
 toTaggedJSON :: Value -> Aeson.Value

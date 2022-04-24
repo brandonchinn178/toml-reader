@@ -33,8 +33,9 @@ library:
     - time >= 1.8.0.2 && < 1.12
 
 tests:
-  toml-validator:
-    main: Validate.hs
+  # TODO: library tests for decode
+  parser-validator:
+    main: ValidateParser.hs
     source-dirs: test
     dependencies:
       - aeson
