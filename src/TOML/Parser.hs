@@ -17,9 +17,10 @@ import Data.Foldable (foldlM)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
+import qualified Data.Text as Text
 import Data.Void (Void)
 import Text.Megaparsec
-import Text.Megaparsec.Char hiding (newline)
+import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
 import TOML.Internal (TOMLError (..), Table, Value (..))
@@ -27,7 +28,7 @@ import TOML.Internal (TOMLError (..), Table, Value (..))
 parseTOML :: String -> Text -> Either TOMLError Value
 parseTOML filename input =
   case runParser parseTOMLDocument filename input of
-    Left e -> Left $ ParseError e
+    Left e -> Left $ ParseError $ Text.pack $ errorBundlePretty e
     Right result -> Table <$> normalize result
 
 {--- Parse raw document ---}
@@ -67,7 +68,7 @@ parseRawTable =
     _ <- string "="
     hspace
     value <- parseValue
-    newline
+    endOfLine
     emptyLines
     return (key, value)
 
@@ -78,7 +79,7 @@ parseTableSection = do
       [ SectionTableArray <$> parseHeader "[[" "]]"
       , SectionTable <$> parseHeader "[" "]"
       ]
-  newline
+  endOfLine
   emptyLines
   tableSectionTable <- parseRawTable
   emptyLines
@@ -120,21 +121,21 @@ parseValue =
     , LocalTime <$> parseLocalTime
     ]
   where
-    parseInlineTable = undefined
-    parseInlineArray = undefined
+    parseInlineTable = empty -- TODO
+    parseInlineArray = empty -- TODO
     parseString =
       choice
         -- TODO: multiline basic+literal strings
         [ try parseBasicString
         , parseLiteralString
         ]
-    parseInteger = undefined
-    parseFloat = undefined
-    parseBoolean = undefined
-    parseOffsetDateTime = undefined
-    parseLocalDateTime = undefined
-    parseLocalDate = undefined
-    parseLocalTime = undefined
+    parseInteger = empty -- TODO
+    parseFloat = empty -- TODO
+    parseBoolean = empty -- TODO
+    parseOffsetDateTime = empty -- TODO
+    parseLocalDateTime = empty -- TODO
+    parseLocalDate = empty -- TODO
+    parseLocalTime = empty -- TODO
 
 -- | A string in double quotes.
 parseBasicString :: Parser Text
@@ -198,10 +199,13 @@ normalize TOMLDoc{..} = do
 hsymbol :: Text -> Parser ()
 hsymbol s = L.symbol hspace s >> pure ()
 
--- | Parse trailing whitespace + newline
-newline :: Parser ()
-newline = hspace >> eol >> pure ()
+-- | Parse trailing whitespace/trailing comments + newline
+endOfLine :: Parser ()
+endOfLine = L.space hspace1 skipComments empty >> eol >> pure ()
 
 -- | Parse spaces, newlines, and comments
 emptyLines :: Parser ()
-emptyLines = L.space space1 (L.skipLineComment "#") empty
+emptyLines = L.space space1 skipComments empty
+
+skipComments :: Parser ()
+skipComments = L.skipLineComment "#"

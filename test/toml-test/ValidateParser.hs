@@ -12,9 +12,11 @@ import qualified Data.Text.IO as Text
 import qualified Data.Vector as Vector
 import System.Directory (findExecutable)
 import System.Environment (getArgs, getExecutablePath)
+import System.Exit (exitFailure)
+import System.IO (stderr)
 import System.Process (callProcess)
 
-import TOML (Value (..))
+import TOML (TOMLError (..), Value (..))
 import TOML.Parser (parseTOML)
 
 #if MIN_VERSION_aeson(2,0,0)
@@ -52,8 +54,15 @@ runTomlTest args = do
 checkTOML :: IO ()
 checkTOML = do
   input <- Text.getContents
-  output <- either (error . show) return $ parseTOML "<stdin>" input
+  output <- either handleError return $ parseTOML "<stdin>" input
   Char8.putStrLn $ Aeson.encode $ toTaggedJSON output
+  where
+    handleError e = do
+      Text.hPutStrLn stderr $
+        case e of
+          ParseError s -> s
+          NormalizeError s -> s
+      exitFailure
 
 toTaggedJSON :: Value -> Aeson.Value
 toTaggedJSON = \case

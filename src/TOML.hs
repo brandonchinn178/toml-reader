@@ -4,12 +4,13 @@ module TOML (
   Value (..),
   Table,
   FromTOML (..),
+  TOMLError (..),
 ) where
 
 import Data.Text (Text)
 import qualified Data.Text.IO as Text
 
-import TOML.Internal (TOMLError, Table, Value (..))
+import TOML.Internal (TOMLError (..), Table, Value (..))
 import TOML.Parser (parseTOML)
 
 {--- FromTOML ---}
