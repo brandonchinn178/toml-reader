@@ -356,6 +356,9 @@ jobs:
             -skip invalid/table/with-pound
           '
 
+      - name: Check that Cabal file was generated
+        run: git diff --exit-code '*.cabal'
+
       # upload coverage data
       - name: Generate coverage data
         run: stack install hpc-lcov && hpc-lcov
