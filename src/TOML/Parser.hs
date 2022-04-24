@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -12,14 +13,17 @@ module TOML.Parser (
   parseTOML,
 ) where
 
+import Control.Monad.Combinators.NonEmpty (sepBy1)
 import Data.Char (ord)
 import Data.Foldable (foldlM)
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Void (Void)
-import Text.Megaparsec
+import Text.Megaparsec hiding (sepBy1)
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
@@ -35,7 +39,7 @@ parseTOML filename input =
 
 type Parser = Parsec Void Text
 
-type Key = [Text]
+type Key = NonEmpty Text
 type RawTable = Map Key Value
 
 data TOMLDoc = TOMLDoc
@@ -95,7 +99,7 @@ parseTableSection = do
 
 parseKey :: Parser Key
 parseKey =
-  (`sepBy` hsymbol ".") . choice $
+  (`sepBy1` hsymbol ".") . choice $
     [ parseBasicString
     , parseLiteralString
     , parseUnquotedKey
@@ -179,7 +183,7 @@ normalize TOMLDoc{..} = do
   foldlM (flip mergeTableSection) root subTables
   where
     flattenTable :: RawTable -> Either TOMLError Table
-    flattenTable = undefined
+    flattenTable = foldlM (\t (k, v) -> insertAt k v t) Map.empty . Map.toList
 
     mergeTableSection :: TableSection -> Table -> Either TOMLError Table
     mergeTableSection TableSection{..} baseTable = do
@@ -193,6 +197,40 @@ normalize TOMLDoc{..} = do
 
     mergeTableSectionArray :: Key -> Table -> Table -> Either TOMLError Table
     mergeTableSectionArray = undefined
+
+{- |
+Insert Value into Table at Key.
+
+e.g. `insertAt ["a", "b", "c"] v Map.empty` results in the JSON equivalent
+of `{ "a": { "b": { "c": v } } }`.
+-}
+insertAt :: Key -> Value -> Table -> Either TOMLError Table
+insertAt allKeys val = go [] allKeys
+  where
+    go history (k NonEmpty.:| ks) =
+      let insert =
+            case NonEmpty.nonEmpty ks of
+              Nothing -> \case
+                Nothing -> pure val
+                Just v -> insertFail history k v
+              Just ks' -> \curr -> do
+                subTable <-
+                  case curr of
+                    Nothing -> pure Map.empty
+                    Just (Table subTable) -> pure subTable
+                    Just v -> insertFail history k v
+                Table <$> go (k : history) ks' subTable
+       in Map.alterF (fmap Just . insert) k
+
+    insertFail history key currVal =
+      normalizeErr . Text.unlines $
+        [ "Could not add value to path \"" <> Text.intercalate "." (key : history) <> "\":"
+        , "  Setting: " <> Text.intercalate "." (NonEmpty.toList allKeys) <> " = " <> Text.pack (show val)
+        , "  Existing value: " <> Text.pack (show currVal)
+        ]
+
+normalizeErr :: Text -> Either TOMLError a
+normalizeErr = Left . NormalizeError
 
 {--- Helpers ---}
 

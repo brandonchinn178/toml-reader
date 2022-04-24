@@ -8,7 +8,7 @@ module TOML.Internal (
 ) where
 
 import Control.DeepSeq (NFData)
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import Data.Text (Text)
 import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
 import GHC.Generics (Generic)
