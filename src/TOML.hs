@@ -1,29 +1,33 @@
 module TOML (
   decode,
+  decodeFile,
   Value (..),
+  FromTOML (..),
 ) where
 
-import Data.Map (Map)
+import Control.Monad ((>=>))
 import Data.Text (Text)
-import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
+import qualified Data.Text.IO as Text
 
-data Value
-  = Table (Map Text Value)
-  | Array [Value]
-  | String Text
-  | Integer Integer
-  | Float Double
-  | Boolean Bool
-  | OffsetDateTime UTCTime
-  | LocalDateTime LocalTime
-  | LocalDate Day
-  | LocalTime TimeOfDay
-  deriving (Show, Eq)
+import TOML.Internal (TOMLError, Value (..))
+import TOML.Parser (parseTOML)
+
+{--- FromTOML ---}
+
+-- TODO: do a similar thing to jordan to parse and deserialize at the same time
+-- https://github.com/AnthonySuper/jordan
+newtype Parser a = Parser {unParser :: Value -> Either TOMLError a}
+
+class FromTOML a where
+  fromTOML :: Parser a
+
+instance FromTOML Value where
+  fromTOML = Parser Right
+
+{--- Decoding ---}
 
 decode :: FromTOML a => Text -> Either TOMLError a
-decode = undefined
+decode = parseTOML >=> unParser fromTOML
 
--- TODO
-data TOMLError = TOMLError deriving (Show)
-class FromTOML a
-instance FromTOML Value
+decodeFile :: FromTOML a => FilePath -> IO (Either TOMLError a)
+decodeFile = fmap decode . Text.readFile
