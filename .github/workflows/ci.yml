@@ -38,9 +38,13 @@ jobs:
         with:
           path: ~/.stack
           key: ${{ runner.os }}-stack-cache-${{ hashFiles(matrix.stack_yaml, 'package.yaml') }}
-      - name: Build + test
+      - name: Build
+        run: stack build --test --no-run-tests
+      - name: Test
+        run: stack test :toml-reader-tests --coverage
+      - name: Test validator
         run: |
-          stack build --test --coverage --ta '
+          stack test :parser-validator --coverage --ta '
             -skip valid/array/array
             -skip valid/array/bool
             -skip valid/array/empty
