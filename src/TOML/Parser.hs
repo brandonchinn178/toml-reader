@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -26,6 +27,11 @@ import Data.Void (Void)
 import Text.Megaparsec hiding (sepBy1)
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+
+#if !MIN_VERSION_megaparsec(9,0,0)
+import Control.Monad (void)
+import Data.Char (isSpace)
+#endif
 
 import TOML.Internal (TOMLError (..), Table, Value (..))
 
@@ -207,7 +213,7 @@ of `{ "a": { "b": { "c": v } } }`.
 insertAt :: Key -> Value -> Table -> Either TOMLError Table
 insertAt allKeys val = go [] allKeys
   where
-    go history (k NonEmpty.:| ks) =
+    go history (k NonEmpty.:| ks) table = do
       let insert =
             case NonEmpty.nonEmpty ks of
               Nothing -> \case
@@ -220,7 +226,8 @@ insertAt allKeys val = go [] allKeys
                     Just (Table subTable) -> pure subTable
                     Just v -> insertFail history k v
                 Table <$> go (k : history) ks' subTable
-       in Map.alterF (fmap Just . insert) k
+
+      Map.alterF (fmap Just . insert) k table
 
     insertFail history key currVal =
       normalizeErr . Text.unlines $
@@ -247,3 +254,14 @@ emptyLines = L.space space1 skipComments empty
 
 skipComments :: Parser ()
 skipComments = L.skipLineComment "#"
+
+#if !MIN_VERSION_megaparsec(9,0,0)
+hspace :: Parser ()
+hspace = void $ takeWhileP (Just "white space") isHSpace
+
+hspace1 :: Parser ()
+hspace1 = void $ takeWhile1P (Just "white space") isHSpace
+
+isHSpace :: Char -> Bool
+isHSpace x = isSpace x && x /= '\n' && x /= '\r'
+#endif
