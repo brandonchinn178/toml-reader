@@ -1,0 +1,4 @@
+.stack-work/
+stack-ghc-*.yaml.lock
+
+.DS_Store
