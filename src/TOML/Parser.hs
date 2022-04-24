@@ -16,7 +16,6 @@ import Data.Char (ord)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
-import qualified Data.Text as Text
 import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char hiding (newline)
@@ -29,8 +28,8 @@ parseTOML filename input =
   case runParser parseTOMLDocument filename input of
     Left e -> Left $ TOMLError e
     Right result -> normalize result
-  where
-    normalize = undefined
+
+{--- Parse raw document ---}
 
 type Parser = Parsec Void Text
 
@@ -94,12 +93,51 @@ parseTableSection = do
 
 parseKey :: Parser Key
 parseKey =
-  fmap (map Text.pack) $
-    (`sepBy` hsymbol ".") . choice $
-      [ between (hsymbol "\"") (hsymbol "\"") (many $ satisfy isBasicChar)
-      , between (hsymbol "'") (hsymbol "'") (many $ satisfy isLiteralChar)
-      , unquotedString
-      ]
+  (`sepBy` hsymbol ".") . choice $
+    [ parseBasicString
+    , parseLiteralString
+    , parseUnquotedKey
+    ]
+  where
+    parseUnquotedKey =
+      takeWhile1P
+        (Just "[A-Za-z0-9_-]")
+        (`elem` ['A' .. 'Z'] ++ ['a' .. 'z'] ++ ['0' .. '9'] ++ "-_")
+
+parseValue :: Parser Value
+parseValue =
+  choice
+    [ try $ Table <$> parseInlineTable
+    , try $ Array <$> parseInlineArray
+    , try $ String <$> parseString
+    , try $ Integer <$> parseInteger
+    , try $ Float <$> parseFloat
+    , try $ Boolean <$> parseBoolean
+    , try $ OffsetDateTime <$> parseOffsetDateTime
+    , try $ LocalDateTime <$> parseLocalDateTime
+    , try $ LocalDate <$> parseLocalDate
+    , LocalTime <$> parseLocalTime
+    ]
+  where
+    parseInlineTable = undefined
+    parseInlineArray = undefined
+    parseString =
+      choice
+        -- TODO: multiline basic+literal strings
+        [ try parseBasicString
+        , parseLiteralString
+        ]
+    parseInteger = undefined
+    parseFloat = undefined
+    parseBoolean = undefined
+    parseOffsetDateTime = undefined
+    parseLocalDateTime = undefined
+    parseLocalDate = undefined
+    parseLocalTime = undefined
+
+-- | A string in double quotes.
+parseBasicString :: Parser Text
+parseBasicString = between (hsymbol "\"") (hsymbol "\"") $ takeWhileP (Just "basic-char") isBasicChar
   where
     isBasicChar c =
       let code = ord c
@@ -111,6 +149,11 @@ parseKey =
             -- TODO: escape sequences
             -- \", \\, \b, \f, \n, \r, \t, \uXXXX, \UXXXXXXXX
             _ -> False
+
+-- | A string in single quotes.
+parseLiteralString :: Parser Text
+parseLiteralString = between (hsymbol "'") (hsymbol "'") $ takeWhileP (Just "literal-char") isLiteralChar
+  where
     isLiteralChar c =
       let code = ord c
        in case c of
@@ -119,16 +162,17 @@ parseKey =
             _ | 0x21 <= code && code <= 0x7E -> c /= '\''
             _ | isNonAscii c -> True
             _ -> False
-    unquotedString =
-      some $
-        label "[A-Za-z0-9_-]" . oneOf $
-          ['A' .. 'Z'] ++ ['a' .. 'z'] ++ ['0' .. '9'] ++ "-_"
-    isNonAscii c =
-      let code = ord c
-       in (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
 
-parseValue :: Parser Value
-parseValue = undefined
+-- | https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf#L38
+isNonAscii :: Char -> Bool
+isNonAscii c =
+  let code = ord c
+   in (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
+
+{--- Normalize into Value ---}
+
+normalize :: TOMLDoc -> Either TOMLError Value
+normalize = undefined
 
 {--- Helpers ---}
 
