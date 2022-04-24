@@ -52,7 +52,7 @@ runTomlTest args = do
 checkTOML :: IO ()
 checkTOML = do
   input <- Text.getContents
-  output <- either (error . show) return $ parseTOML input
+  output <- either (error . show) return $ parseTOML "<stdin>" input
   Char8.putStrLn $ Aeson.encode $ toTaggedJSON output
 
 toTaggedJSON :: Value -> Aeson.Value

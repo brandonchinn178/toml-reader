@@ -3,6 +3,7 @@
 
 module TOML.Internal (
   Value (..),
+  Table,
   TOMLError (..),
 ) where
 
@@ -10,10 +11,14 @@ import Control.DeepSeq (NFData)
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
+import Data.Void (Void)
 import GHC.Generics (Generic)
+import Text.Megaparsec.Error (ParseErrorBundle)
+
+type Table = Map Text Value
 
 data Value
-  = Table (Map Text Value)
+  = Table Table
   | Array [Value]
   | String Text
   | Integer Integer
@@ -25,5 +30,5 @@ data Value
   | LocalTime TimeOfDay
   deriving (Show, Eq, Generic, NFData)
 
--- TODO
-data TOMLError = TOMLError deriving (Show)
+-- TODO: convert parse errors into our own errors
+data TOMLError = TOMLError (ParseErrorBundle Text Void) deriving (Show)
