@@ -139,7 +139,11 @@ parseValue =
         ]
     parseInteger = empty -- TODO
     parseFloat = empty -- TODO
-    parseBoolean = empty -- TODO
+    parseBoolean =
+      choice
+        [ True <$ string "true"
+        , False <$ string "false"
+        ]
     parseOffsetDateTime = empty -- TODO
     parseLocalDateTime = empty -- TODO
     parseLocalDate = empty -- TODO

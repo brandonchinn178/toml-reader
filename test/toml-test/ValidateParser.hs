@@ -8,6 +8,7 @@ import qualified Data.ByteString.Lazy.Char8 as Char8
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
+import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import qualified Data.Vector as Vector
 import System.Directory (findExecutable)
@@ -68,16 +69,16 @@ toTaggedJSON :: Value -> Aeson.Value
 toTaggedJSON = \case
   Table o -> Aeson.Object $ toKeyMap $ toTaggedJSON <$> o
   Array vs -> Aeson.Array $ Vector.fromList $ map toTaggedJSON vs
-  String x -> tagged "string" x
-  Integer x -> tagged "integer" x
-  Float x -> tagged "float" x
-  Boolean x -> tagged "bool" x
+  String x -> tagged "string" (Text.unpack x)
+  Integer x -> tagged "integer" (show x)
+  Float x -> tagged "float" (show x)
+  Boolean x -> tagged "bool" $ if x then "true" else "false"
   OffsetDateTime x -> tagged "datetime" $ iso8601Show x
   LocalDateTime x -> tagged "datetime-local" $ iso8601Show x
   LocalDate x -> tagged "date-local" $ iso8601Show x
   LocalTime x -> tagged "time-local" $ iso8601Show x
   where
-    tagged :: Aeson.ToJSON a => String -> a -> Aeson.Value
+    tagged :: String -> String -> Aeson.Value
     tagged ty v = Aeson.object ["type" .= ty, "value" .= v]
 
 #if MIN_VERSION_aeson(2,0,0)

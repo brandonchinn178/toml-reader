@@ -58,7 +58,6 @@ jobs:
             -skip valid/array/string-with-comma
             -skip valid/array/strings
             -skip valid/array/table-array-string-backslash
-            -skip valid/bool/bool
             -skip valid/comment/everywhere
             -skip valid/comment/tricky
             -skip valid/datetime/datetime
