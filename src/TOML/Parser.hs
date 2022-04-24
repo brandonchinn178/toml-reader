@@ -13,6 +13,7 @@ module TOML.Parser (
 ) where
 
 import Data.Char (ord)
+import Data.Foldable (foldlM)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
@@ -21,29 +22,29 @@ import Text.Megaparsec
 import Text.Megaparsec.Char hiding (newline)
 import qualified Text.Megaparsec.Char.Lexer as L
 
-import TOML.Internal (TOMLError (..), Value (..))
+import TOML.Internal (TOMLError (..), Table, Value (..))
 
 parseTOML :: String -> Text -> Either TOMLError Value
 parseTOML filename input =
   case runParser parseTOMLDocument filename input of
-    Left e -> Left $ TOMLError e
-    Right result -> normalize result
+    Left e -> Left $ ParseError e
+    Right result -> Table <$> normalize result
 
 {--- Parse raw document ---}
 
 type Parser = Parsec Void Text
 
 type Key = [Text]
-type Table = Map Key Value
+type RawTable = Map Key Value
 
 data TOMLDoc = TOMLDoc
-  { rootTable :: Table
+  { rootTable :: RawTable
   , subTables :: [TableSection]
   }
 
 data TableSection = TableSection
   { tableSectionHeader :: TableSectionHeader
-  , tableSectionTable :: Table
+  , tableSectionTable :: RawTable
   }
 
 data TableSectionHeader = SectionTable Key | SectionTableArray Key
@@ -51,15 +52,15 @@ data TableSectionHeader = SectionTable Key | SectionTableArray Key
 parseTOMLDocument :: Parser TOMLDoc
 parseTOMLDocument = do
   emptyLines
-  rootTable <- parseTable
+  rootTable <- parseRawTable
   emptyLines
   subTables <- many parseTableSection
   emptyLines
   eof
   return TOMLDoc{..}
 
-parseTable :: Parser Table
-parseTable =
+parseRawTable :: Parser RawTable
+parseRawTable =
   fmap Map.fromList . many $ do
     key <- parseKey
     hspace
@@ -79,7 +80,7 @@ parseTableSection = do
       ]
   newline
   emptyLines
-  tableSectionTable <- parseTable
+  tableSectionTable <- parseRawTable
   emptyLines
   return TableSection{..}
   where
@@ -171,8 +172,26 @@ isNonAscii c =
 
 {--- Normalize into Value ---}
 
-normalize :: TOMLDoc -> Either TOMLError Value
-normalize = undefined
+normalize :: TOMLDoc -> Either TOMLError Table
+normalize TOMLDoc{..} = do
+  root <- flattenTable rootTable
+  foldlM (flip mergeTableSection) root subTables
+  where
+    flattenTable :: RawTable -> Either TOMLError Table
+    flattenTable = undefined
+
+    mergeTableSection :: TableSection -> Table -> Either TOMLError Table
+    mergeTableSection TableSection{..} baseTable = do
+      subTable <- flattenTable tableSectionTable
+      case tableSectionHeader of
+        SectionTable key -> mergeTableSectionTable key subTable baseTable
+        SectionTableArray key -> mergeTableSectionArray key subTable baseTable
+
+    mergeTableSectionTable :: Key -> Table -> Table -> Either TOMLError Table
+    mergeTableSectionTable = undefined
+
+    mergeTableSectionArray :: Key -> Table -> Table -> Either TOMLError Table
+    mergeTableSectionArray = undefined
 
 {--- Helpers ---}
 

@@ -30,5 +30,8 @@ data Value
   | LocalTime TimeOfDay
   deriving (Show, Eq, Generic, NFData)
 
--- TODO: convert parse errors into our own errors
-data TOMLError = TOMLError (ParseErrorBundle Text Void) deriving (Show)
+-- TODO: better names?
+data TOMLError
+  = ParseError (ParseErrorBundle Text Void) -- TODO: convert parse errors into our own errors
+  | NormalizeError Text
+  deriving (Show)
