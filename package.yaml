@@ -27,12 +27,23 @@ library:
   source-dirs: src
   dependencies:
     - base >= 4.9 && < 5
+    - containers >= 0.6.0.1 && < 0.7
     - text >= 1.2.3.1 && < 1.3
+    - time >= 1.8.0.2 && < 1.12
 
 tests:
   toml-validator:
     main: Validate.hs
     source-dirs: test
     dependencies:
+      - aeson
       - base
+      - bytestring
+      - containers
+      - directory
+      - process
       - text
+      - time
+      - toml-reader
+      - unordered-containers
+      - vector

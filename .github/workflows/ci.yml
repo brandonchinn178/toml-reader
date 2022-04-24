@@ -23,6 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Install toml-test
+        env:
+          TOML_TEST_VERSION: '1.1.0'
+        run: |
+          curl -sSL \
+            "https://github.com/BurntSushi/toml-test/releases/download/v${TOML_TEST_VERSION}/toml-test-v${TOML_TEST_VERSION}-linux-amd64.gz" \
+            -o toml-test.gz
+          gunzip toml-test.gz
+          chmod +x toml-test
+          mv toml-test /usr/local/bin/
+
       - uses: actions/cache@v3
         with:
           path: ~/.stack
