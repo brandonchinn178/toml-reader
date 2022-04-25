@@ -121,36 +121,33 @@ parseKey =
 parseValue :: Parser Value
 parseValue =
   choice
-    [ try $ Table <$> parseInlineTable
-    , try $ Array <$> parseInlineArray
-    , try $ String <$> parseString
+    [ try $ Table <$> label "table" parseInlineTable
+    , try $ Array <$> label "array" parseInlineArray
+    , try $ String <$> label "string" parseString
     , try $ Integer <$> label "integer" parseInteger
-    , try $ Float <$> parseFloat
-    , try $ Boolean <$> parseBoolean
-    , try $ OffsetDateTime <$> parseOffsetDateTime
-    , try $ LocalDateTime <$> parseLocalDateTime
-    , try $ LocalDate <$> parseLocalDate
-    , LocalTime <$> parseLocalTime
+    , try $ Float <$> label "float" parseFloat
+    , try $ Boolean <$> label "boolean" parseBoolean
+    , try $ OffsetDateTime <$> label "offset-datetime" parseOffsetDateTime
+    , try $ LocalDateTime <$> label "local-datetime" parseLocalDateTime
+    , try $ LocalDate <$> label "local-date" parseLocalDate
+    , LocalTime <$> label "local-time" parseLocalTime
     ]
   where
     parseInlineTable = empty -- TODO
     parseInlineArray = empty -- TODO
-    parseString =
-      label "string" . choice $
-        -- TODO: multiline basic+literal strings
-        [ try parseBasicString
-        , parseLiteralString
-        ]
     parseFloat = empty -- TODO
-    parseBoolean =
-      label "boolean" . choice $
-        [ True <$ string "true"
-        , False <$ string "false"
-        ]
     parseOffsetDateTime = empty -- TODO
     parseLocalDateTime = empty -- TODO
     parseLocalDate = empty -- TODO
     parseLocalTime = empty -- TODO
+
+parseString :: Parser Text
+parseString =
+  choice
+    -- TODO: multiline basic+literal strings
+    [ try parseBasicString
+    , parseLiteralString
+    ]
 
 -- | A string in double quotes.
 parseBasicString :: Parser Text
@@ -203,6 +200,12 @@ parseLiteralString =
             _ | isNonAscii c -> True
             _ -> False
 
+-- | https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf#L38
+isNonAscii :: Char -> Bool
+isNonAscii c =
+  let code = ord c
+   in (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
+
 parseInteger :: Parser Integer
 parseInteger =
   choice
@@ -236,11 +239,12 @@ parseInteger =
     parsePrefixedInt readInt prefix parseDigit =
       string prefix *> parseDigits readInt parseDigit parseDigit
 
--- | https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf#L38
-isNonAscii :: Char -> Bool
-isNonAscii c =
-  let code = ord c
-   in (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
+parseBoolean :: Parser Bool
+parseBoolean =
+  choice
+    [ True <$ string "true"
+    , False <$ string "false"
+    ]
 
 {--- Normalize into Value ---}
 
