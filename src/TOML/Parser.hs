@@ -17,15 +17,16 @@ module TOML.Parser (
 ) where
 
 import Control.Monad.Combinators.NonEmpty (sepBy1)
-import Data.Char (digitToInt, isDigit, ord, toLower)
+import Data.Char (chr, digitToInt, isDigit, ord)
 import Data.Foldable (foldl', foldlM)
+import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Void (Void)
-import Numeric (readDec, readHex, readOct)
+import qualified Numeric
 import Text.Megaparsec hiding (sepBy1)
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -155,18 +156,37 @@ parseValue =
 parseBasicString :: Parser Text
 parseBasicString =
   label "double-quoted string" $
-    between (hsymbol "\"") (hsymbol "\"") $ takeWhileP (Just "basic-char") isBasicChar
+    between (hsymbol "\"") (hsymbol "\"") $
+      fmap Text.pack . many . choice $
+        [ satisfy isBasicChar
+        , char '\\' *> parseEscaped
+        ]
   where
     isBasicChar c =
       let code = ord c
        in case c of
             ' ' -> True
             '\t' -> True
-            _ | 0x21 <= code && code <= 0x7E -> c `notElem` ['"', '\\']
+            _ | 0x21 <= code && code <= 0x7E -> c /= '"' && c /= '\\'
             _ | isNonAscii c -> True
-            -- TODO: escape sequences
-            -- \", \\, \b, \f, \n, \r, \t, \uXXXX, \UXXXXXXXX
             _ -> False
+    parseEscaped =
+      choice
+        [ char '"'
+        , char '\\'
+        , char 'b' $> '\b'
+        , char 'f' $> '\f'
+        , char 'n' $> '\n'
+        , char 'r' $> '\r'
+        , char 't' $> '\t'
+        , char 'u' *> unicodeHex 4
+        , char 'U' *> unicodeHex 8
+        ]
+
+    unicodeHex n = do
+      code <- readHex <$> count n hexDigitChar
+      pure $ if code <= maxUnicode then chr code else '�'
+    maxUnicode = ord (maxBound :: Char)
 
 -- | A string in single quotes.
 parseLiteralString :: Parser Text
@@ -201,39 +221,20 @@ parseInteger =
           ]
       pure $ if sign == Just '-' then -num else num
     parseUnsignedDecInt =
-      parseDigits readDec (\c -> isDigit c && c /= '0') isDigit
+      parseDigits readDec (satisfy $ \c -> isDigit c && c /= '0') digitChar
     parseHexInt =
-      parsePrefixedInt readHex "0x" $ \c ->
-        let c' = toLower c
-         in isDigit c || ('a' <= c' && c' <= 'f')
+      parsePrefixedInt readHex "0x" hexDigitChar
     parseOctInt =
-      parsePrefixedInt readOct "0o" $ \c ->
-        '0' <= c && c <= '7'
+      parsePrefixedInt readOct "0o" octDigitChar
     parseBinInt =
-      parsePrefixedInt readBin "0b" $ \c ->
-        '0' <= c && c <= '1'
+      parsePrefixedInt readBin "0b" binDigitChar
 
-    parseDigits rdr isValidLeadingDigit isValidDigit = do
-      leading <- satisfy isValidLeadingDigit
-      rest <- many $ optional (char '_') *> satisfy isValidDigit
-      let digits = leading : rest
-      case rdr digits of
-        [(x, "")] -> pure x
-        -- should not happen
-        result -> error $ "Unexpectedly unable to parse " <> show digits <> ": " <> show result
-    parsePrefixedInt rdr prefix isValidDigit =
-      string prefix *> parseDigits rdr isValidDigit isValidDigit
-
-    -- parses a binary number, assumes string has ONLY zeros and ones
-    readBin :: String -> [(Integer, String)]
-    readBin s =
-      let go acc x =
-            let digit
-                  | x == '0' = 0
-                  | x == '1' = 1
-                  | otherwise = error $ "readBin got unexpected digit: " <> show x
-             in 2 * acc + digit
-       in [(foldl' go 0 s, "")]
+    parseDigits readInt parseLeadingDigit parseDigit = do
+      leading <- parseLeadingDigit
+      rest <- many $ optional (char '_') *> parseDigit
+      pure $ readInt $ leading : rest
+    parsePrefixedInt readInt prefix parseDigit =
+      string prefix *> parseDigits readInt parseDigit parseDigit
 
 -- | https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf#L38
 isNonAscii :: Char -> Bool
@@ -300,7 +301,7 @@ insertAt allKeys val = go [] allKeys
 normalizeErr :: Text -> Either TOMLError a
 normalizeErr = Left . NormalizeError
 
-{--- Helpers ---}
+{--- Parser Helpers ---}
 
 hsymbol :: Text -> Parser ()
 hsymbol s = L.symbol hspace s >> pure ()
@@ -326,3 +327,34 @@ hspace1 = void $ takeWhile1P (Just "white space") isHSpace
 isHSpace :: Char -> Bool
 isHSpace x = isSpace x && x /= '\n' && x /= '\r'
 #endif
+
+{--- Read Helpers ---}
+
+-- | Assumes string satisfies @all isDigit@.
+readDec :: (Show a, Num a, Eq a) => String -> a
+readDec = runReader Numeric.readDec
+
+-- | Assumes string satisfies @all isHexDigit@.
+readHex :: (Show a, Num a, Eq a) => String -> a
+readHex = runReader Numeric.readHex
+
+-- | Assumes string satisfies @all isOctDigit@.
+readOct :: (Show a, Num a, Eq a) => String -> a
+readOct = runReader Numeric.readOct
+
+-- | Assumes string satisfies @all (`elem` "01")@.
+readBin :: (Show a, Num a) => String -> a
+readBin s = foldl' go 0 s
+  where
+    go acc x =
+      let digit
+            | x == '0' = 0
+            | x == '1' = 1
+            | otherwise = error $ "readBin got unexpected digit: " <> show x
+       in 2 * acc + digit
+
+runReader :: Show a => ReadS a -> String -> a
+runReader rdr digits =
+  case rdr digits of
+    [(x, "")] -> x
+    result -> error $ "Unexpectedly unable to parse " <> show digits <> ": " <> show result
