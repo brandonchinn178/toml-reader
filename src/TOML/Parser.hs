@@ -1,7 +1,9 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies #-}
 
 {- |
 Parse a TOML document.
@@ -15,14 +17,15 @@ module TOML.Parser (
 ) where
 
 import Control.Monad.Combinators.NonEmpty (sepBy1)
-import Data.Char (ord)
-import Data.Foldable (foldlM)
+import Data.Char (digitToInt, isDigit, ord, toLower)
+import Data.Foldable (foldl', foldlM)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Void (Void)
+import Numeric (readDec, readHex, readOct)
 import Text.Megaparsec hiding (sepBy1)
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -73,7 +76,7 @@ parseRawTable :: Parser RawTable
 parseRawTable = many $ do
   key <- parseKey
   hspace
-  _ <- string "="
+  _ <- char '='
   hspace
   value <- parseValue
   endOfLine
@@ -120,7 +123,7 @@ parseValue =
     [ try $ Table <$> parseInlineTable
     , try $ Array <$> parseInlineArray
     , try $ String <$> parseString
-    , try $ Integer <$> parseInteger
+    , try $ Integer <$> label "integer" parseInteger
     , try $ Float <$> parseFloat
     , try $ Boolean <$> parseBoolean
     , try $ OffsetDateTime <$> parseOffsetDateTime
@@ -132,15 +135,14 @@ parseValue =
     parseInlineTable = empty -- TODO
     parseInlineArray = empty -- TODO
     parseString =
-      choice
+      label "string" . choice $
         -- TODO: multiline basic+literal strings
         [ try parseBasicString
         , parseLiteralString
         ]
-    parseInteger = empty -- TODO
     parseFloat = empty -- TODO
     parseBoolean =
-      choice
+      label "boolean" . choice $
         [ True <$ string "true"
         , False <$ string "false"
         ]
@@ -151,7 +153,9 @@ parseValue =
 
 -- | A string in double quotes.
 parseBasicString :: Parser Text
-parseBasicString = between (hsymbol "\"") (hsymbol "\"") $ takeWhileP (Just "basic-char") isBasicChar
+parseBasicString =
+  label "double-quoted string" $
+    between (hsymbol "\"") (hsymbol "\"") $ takeWhileP (Just "basic-char") isBasicChar
   where
     isBasicChar c =
       let code = ord c
@@ -166,7 +170,9 @@ parseBasicString = between (hsymbol "\"") (hsymbol "\"") $ takeWhileP (Just "bas
 
 -- | A string in single quotes.
 parseLiteralString :: Parser Text
-parseLiteralString = between (hsymbol "'") (hsymbol "'") $ takeWhileP (Just "literal-char") isLiteralChar
+parseLiteralString =
+  label "single-quoted string" $
+    between (hsymbol "'") (hsymbol "'") $ takeWhileP (Just "literal-char") isLiteralChar
   where
     isLiteralChar c =
       let code = ord c
@@ -176,6 +182,58 @@ parseLiteralString = between (hsymbol "'") (hsymbol "'") $ takeWhileP (Just "lit
             _ | 0x21 <= code && code <= 0x7E -> c /= '\''
             _ | isNonAscii c -> True
             _ -> False
+
+parseInteger :: Parser Integer
+parseInteger =
+  choice
+    [ try parseBinInt
+    , try parseOctInt
+    , try parseHexInt
+    , parseSignedDecInt
+    ]
+  where
+    parseSignedDecInt = do
+      sign <- optional $ satisfy $ \c -> c == '-' || c == '+'
+      num <-
+        choice
+          [ try parseUnsignedDecInt
+          , fromIntegral . digitToInt <$> digitChar
+          ]
+      pure $ if sign == Just '-' then -num else num
+    parseUnsignedDecInt =
+      parseDigits readDec (\c -> isDigit c && c /= '0') isDigit
+    parseHexInt =
+      parsePrefixedInt readHex "0x" $ \c ->
+        let c' = toLower c
+         in isDigit c || ('a' <= c' && c' <= 'f')
+    parseOctInt =
+      parsePrefixedInt readOct "0o" $ \c ->
+        '0' <= c && c <= '7'
+    parseBinInt =
+      parsePrefixedInt readBin "0b" $ \c ->
+        '0' <= c && c <= '1'
+
+    parseDigits rdr isValidLeadingDigit isValidDigit = do
+      leading <- satisfy isValidLeadingDigit
+      rest <- many $ optional (char '_') *> satisfy isValidDigit
+      let digits = leading : rest
+      case rdr digits of
+        [(x, "")] -> pure x
+        -- should not happen
+        result -> error $ "Unexpectedly unable to parse " <> show digits <> ": " <> show result
+    parsePrefixedInt rdr prefix isValidDigit =
+      string prefix *> parseDigits rdr isValidDigit isValidDigit
+
+    -- parses a binary number, assumes string has ONLY zeros and ones
+    readBin :: String -> [(Integer, String)]
+    readBin s =
+      let go acc x =
+            let digit
+                  | x == '0' = 0
+                  | x == '1' = 1
+                  | otherwise = error $ "readBin got unexpected digit: " <> show x
+             in 2 * acc + digit
+       in [(foldl' go 0 s, "")]
 
 -- | https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf#L38
 isNonAscii :: Char -> Bool
@@ -231,6 +289,7 @@ insertAt allKeys val = go [] allKeys
 
       Map.alterF (fmap Just . insert) k table
 
+    insertFail :: [Text] -> Text -> Value -> Either TOMLError a
     insertFail history key currVal =
       normalizeErr . Text.unlines $
         [ "Could not add value to path \"" <> Text.intercalate "." (key : history) <> "\":"
