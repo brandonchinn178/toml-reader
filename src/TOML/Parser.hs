@@ -170,15 +170,16 @@ parseLiteralString =
 parseMultilineBasicString :: Parser Text
 parseMultilineBasicString =
   label "double-quoted multiline string" $ do
-    hsymbol delim <* optional eol
+    _ <- string delim *> optional eol
     lineContinuation
-    Text.concat <$> manyTill (mlBasicContent <* lineContinuation) (hsymbol delim)
+    Text.concat <$> manyTill (mlBasicContent <* lineContinuation) (try $ string delim <* notFollowedBy (char '"'))
   where
     delim = Text.replicate 3 "\""
     mlBasicContent =
       choice
         [ Text.singleton <$> try parseEscaped
         , Text.singleton <$> satisfy isBasicChar
+        , Text.singleton <$> try (char '"' <* notFollowedBy (string "\"\"" *> satisfy (/= '"')))
         , eol
         ]
     lineContinuation = many (try $ char '\\' *> hspace *> eol *> space) *> pure ()
@@ -187,13 +188,14 @@ parseMultilineBasicString =
 parseMultilineLiteralString :: Parser Text
 parseMultilineLiteralString =
   label "single-quoted multiline string" $ do
-    hsymbol delim <* optional eol
-    Text.concat <$> manyTill mlLiteralContent (hsymbol delim)
+    _ <- string delim *> optional eol
+    Text.concat <$> manyTill mlLiteralContent (try $ string delim <* notFollowedBy (char '\''))
   where
     delim = Text.replicate 3 "'"
     mlLiteralContent =
       choice
         [ Text.singleton <$> satisfy isLiteralChar
+        , Text.singleton <$> try (char '\'' <* notFollowedBy (string "''" *> satisfy (/= '\'')))
         , eol
         ]
 
