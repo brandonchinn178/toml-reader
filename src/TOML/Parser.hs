@@ -16,6 +16,7 @@ module TOML.Parser (
   parseTOML,
 ) where
 
+import Control.Monad (guard)
 import Control.Monad.Combinators.NonEmpty (sepBy1)
 import Data.Char (chr, digitToInt, isDigit, ord)
 import Data.Foldable (foldl', foldlM)
@@ -170,16 +171,15 @@ parseLiteralString =
 parseMultilineBasicString :: Parser Text
 parseMultilineBasicString =
   label "double-quoted multiline string" $ do
-    _ <- string delim *> optional eol
+    _ <- string "\"\"\"" *> optional eol
     lineContinuation
-    Text.concat <$> manyTill (mlBasicContent <* lineContinuation) (try $ string delim <* notFollowedBy (char '"'))
+    Text.concat <$> manyTill (mlBasicContent <* lineContinuation) (exactly 3 '"')
   where
-    delim = Text.replicate 3 "\""
     mlBasicContent =
       choice
         [ Text.singleton <$> try parseEscaped
         , Text.singleton <$> satisfy isBasicChar
-        , Text.singleton <$> try (char '"' <* notFollowedBy (string "\"\"" *> satisfy (/= '"')))
+        , parseMultilineDelimiter '"'
         , eol
         ]
     lineContinuation = many (try $ char '\\' *> hspace *> eol *> space) *> pure ()
@@ -188,14 +188,13 @@ parseMultilineBasicString =
 parseMultilineLiteralString :: Parser Text
 parseMultilineLiteralString =
   label "single-quoted multiline string" $ do
-    _ <- string delim *> optional eol
-    Text.concat <$> manyTill mlLiteralContent (try $ string delim <* notFollowedBy (char '\''))
+    _ <- string "'''" *> optional eol
+    Text.concat <$> manyTill mlLiteralContent (exactly 3 '\'')
   where
-    delim = Text.replicate 3 "'"
     mlLiteralContent =
       choice
         [ Text.singleton <$> satisfy isLiteralChar
-        , Text.singleton <$> try (char '\'' <* notFollowedBy (string "''" *> satisfy (/= '\'')))
+        , parseMultilineDelimiter '\''
         , eol
         ]
 
@@ -217,8 +216,28 @@ parseEscaped = char '\\' *> parseEscapedChar
 
     unicodeHex n = do
       code <- readHex <$> count n hexDigitChar
-      pure $ if code <= maxUnicode then chr code else '�'
-    maxUnicode = ord (maxBound :: Char)
+      guard $ isUnicodeScalar code
+      pure $ chr code
+
+{- |
+Parse the multiline delimiter (" in """ quotes, or ' in ''' quotes), unless
+the delimiter indicates the end of the multiline string.
+
+i.e. parse 1 or 2 delimiters, or 4 or 5, which is 1 or 2 delimiters at the
+end of a multiline string (then backtrack 3 to mark the end).
+-}
+parseMultilineDelimiter :: Char -> Parser Text
+parseMultilineDelimiter delim =
+  choice
+    [ exactly 1 delim
+    , exactly 2 delim
+    , do
+        _ <- lookAhead (exactly 4 delim)
+        Text.pack <$> count 1 (char delim)
+    , do
+        _ <- lookAhead (exactly 5 delim)
+        Text.pack <$> count 2 (char delim)
+    ]
 
 isBasicChar :: Char -> Bool
 isBasicChar c =
@@ -247,6 +266,10 @@ isNonAscii :: Char -> Bool
 isNonAscii c = (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
   where
     code = ord c
+
+-- | https://unicode.org/glossary/#unicode_scalar_value
+isUnicodeScalar :: Int -> Bool
+isUnicodeScalar code = (0x0 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
 
 parseInteger :: Parser Integer
 parseInteger =
@@ -373,6 +396,9 @@ hspace1 = void $ takeWhile1P (Just "white space") isHSpace
 isHSpace :: Char -> Bool
 isHSpace x = isSpace x && x /= '\n' && x /= '\r'
 #endif
+
+exactly :: Int -> Char -> Parser Text
+exactly n c = try $ Text.pack <$> count n (char c) <* notFollowedBy (char c)
 
 {--- Read Helpers ---}
 
