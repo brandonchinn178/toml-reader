@@ -165,36 +165,37 @@ parseLiteralString :: Parser Text
 parseLiteralString =
   label "single-quoted string" $
     between (hsymbol "'") (hsymbol "'") $ takeWhileP (Just "literal-char") isLiteralChar
-  where
-    isLiteralChar c =
-      let code = ord c
-       in case c of
-            ' ' -> True
-            '\t' -> True
-            _ | 0x21 <= code && code <= 0x7E -> c /= '\''
-            _ | isNonAscii c -> True
-            _ -> False
 
 -- | A multiline string with three double quotes.
 parseMultilineBasicString :: Parser Text
 parseMultilineBasicString =
   label "double-quoted multiline string" $ do
-    hsymbol delim <* optional newline
+    hsymbol delim <* optional eol
     lineContinuation
-    Text.pack <$> manyTill (mlBasicChar <* lineContinuation) (hsymbol delim)
+    Text.concat <$> manyTill (mlBasicContent <* lineContinuation) (hsymbol delim)
   where
     delim = Text.replicate 3 "\""
-    mlBasicChar =
+    mlBasicContent =
       choice
-        [ try parseEscaped
-        , satisfy isBasicChar
-        , newline
+        [ Text.singleton <$> try parseEscaped
+        , Text.singleton <$> satisfy isBasicChar
+        , eol
         ]
-    lineContinuation = many (try $ char '\\' *> hspace *> newline *> space) *> pure ()
+    lineContinuation = many (try $ char '\\' *> hspace *> eol *> space) *> pure ()
 
 -- | A multiline string with three single quotes.
 parseMultilineLiteralString :: Parser Text
-parseMultilineLiteralString = empty
+parseMultilineLiteralString =
+  label "single-quoted multiline string" $ do
+    hsymbol delim <* optional eol
+    Text.concat <$> manyTill mlLiteralContent (hsymbol delim)
+  where
+    delim = Text.replicate 3 "'"
+    mlLiteralContent =
+      choice
+        [ Text.singleton <$> satisfy isLiteralChar
+        , eol
+        ]
 
 parseEscaped :: Parser Char
 parseEscaped = char '\\' *> parseEscapedChar
@@ -223,6 +224,17 @@ isBasicChar c =
     ' ' -> True
     '\t' -> True
     _ | 0x21 <= code && code <= 0x7E -> c /= '"' && c /= '\\'
+    _ | isNonAscii c -> True
+    _ -> False
+  where
+    code = ord c
+
+isLiteralChar :: Char -> Bool
+isLiteralChar c =
+  case c of
+    ' ' -> True
+    '\t' -> True
+    _ | 0x21 <= code && code <= 0x7E -> c /= '\''
     _ | isNonAscii c -> True
     _ -> False
   where
