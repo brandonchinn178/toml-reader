@@ -104,7 +104,6 @@ jobs:
             -skip valid/string/escape-tricky
             -skip valid/string/multiline-escaped-crlf
             -skip valid/string/multiline-quotes
-            -skip valid/string/multiline
             -skip valid/string/nl
             -skip valid/string/raw-multiline
             -skip valid/table/array-implicit

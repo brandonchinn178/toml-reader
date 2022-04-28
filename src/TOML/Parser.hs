@@ -144,8 +144,9 @@ parseValue =
 parseString :: Parser Text
 parseString =
   choice
-    -- TODO: multiline basic+literal strings
-    [ try parseBasicString
+    [ try parseMultilineBasicString
+    , try parseMultilineLiteralString
+    , try parseBasicString
     , parseLiteralString
     ]
 
@@ -156,18 +157,49 @@ parseBasicString =
     between (hsymbol "\"") (hsymbol "\"") $
       fmap Text.pack . many . choice $
         [ satisfy isBasicChar
-        , char '\\' *> parseEscaped
+        , parseEscaped
         ]
+
+-- | A string in single quotes.
+parseLiteralString :: Parser Text
+parseLiteralString =
+  label "single-quoted string" $
+    between (hsymbol "'") (hsymbol "'") $ takeWhileP (Just "literal-char") isLiteralChar
   where
-    isBasicChar c =
+    isLiteralChar c =
       let code = ord c
        in case c of
             ' ' -> True
             '\t' -> True
-            _ | 0x21 <= code && code <= 0x7E -> c /= '"' && c /= '\\'
+            _ | 0x21 <= code && code <= 0x7E -> c /= '\''
             _ | isNonAscii c -> True
             _ -> False
-    parseEscaped =
+
+-- | A multiline string with three double quotes.
+parseMultilineBasicString :: Parser Text
+parseMultilineBasicString =
+  label "double-quoted multiline string" $ do
+    hsymbol delim <* optional newline
+    lineContinuation
+    Text.pack <$> manyTill (mlBasicChar <* lineContinuation) (hsymbol delim)
+  where
+    delim = Text.replicate 3 "\""
+    mlBasicChar =
+      choice
+        [ try parseEscaped
+        , satisfy isBasicChar
+        , newline
+        ]
+    lineContinuation = many (try $ char '\\' *> hspace *> newline *> space) *> pure ()
+
+-- | A multiline string with three single quotes.
+parseMultilineLiteralString :: Parser Text
+parseMultilineLiteralString = empty
+
+parseEscaped :: Parser Char
+parseEscaped = char '\\' *> parseEscapedChar
+  where
+    parseEscapedChar =
       choice
         [ char '"'
         , char '\\'
@@ -185,26 +217,22 @@ parseBasicString =
       pure $ if code <= maxUnicode then chr code else '�'
     maxUnicode = ord (maxBound :: Char)
 
--- | A string in single quotes.
-parseLiteralString :: Parser Text
-parseLiteralString =
-  label "single-quoted string" $
-    between (hsymbol "'") (hsymbol "'") $ takeWhileP (Just "literal-char") isLiteralChar
+isBasicChar :: Char -> Bool
+isBasicChar c =
+  case c of
+    ' ' -> True
+    '\t' -> True
+    _ | 0x21 <= code && code <= 0x7E -> c /= '"' && c /= '\\'
+    _ | isNonAscii c -> True
+    _ -> False
   where
-    isLiteralChar c =
-      let code = ord c
-       in case c of
-            ' ' -> True
-            '\t' -> True
-            _ | 0x21 <= code && code <= 0x7E -> c /= '\''
-            _ | isNonAscii c -> True
-            _ -> False
+    code = ord c
 
 -- | https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf#L38
 isNonAscii :: Char -> Bool
-isNonAscii c =
-  let code = ord c
-   in (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
+isNonAscii c = (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
+  where
+    code = ord c
 
 parseInteger :: Parser Integer
 parseInteger =
