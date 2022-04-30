@@ -18,12 +18,13 @@ module TOML.Parser (
 
 import Control.Monad (guard)
 import Control.Monad.Combinators.NonEmpty (sepBy1)
-import Data.Char (chr, digitToInt, isDigit, ord)
+import Data.Char (chr, isDigit, ord)
 import Data.Foldable (foldl', foldlM)
 import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Void (Void)
@@ -125,8 +126,8 @@ parseValue =
     [ try $ Table <$> label "table" parseInlineTable
     , try $ Array <$> label "array" parseInlineArray
     , try $ String <$> label "string" parseString
-    , try $ Integer <$> label "integer" parseInteger
     , try $ Float <$> label "float" parseFloat
+    , try $ Integer <$> label "integer" parseInteger
     , try $ Boolean <$> label "boolean" parseBoolean
     , try $ OffsetDateTime <$> label "offset-datetime" parseOffsetDateTime
     , try $ LocalDateTime <$> label "local-datetime" parseLocalDateTime
@@ -136,7 +137,6 @@ parseValue =
   where
     parseInlineTable = empty -- TODO
     parseInlineArray = empty -- TODO
-    parseFloat = empty -- TODO
     parseOffsetDateTime = empty -- TODO
     parseLocalDateTime = empty -- TODO
     parseLocalDate = empty -- TODO
@@ -215,7 +215,7 @@ parseEscaped = char '\\' *> parseEscapedChar
         ]
 
     unicodeHex n = do
-      code <- readHex <$> count n hexDigitChar
+      code <- readHex . Text.pack <$> count n hexDigitChar
       guard $ isUnicodeScalar code
       pure $ chr code
 
@@ -271,6 +271,41 @@ isNonAscii c = (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x
 isUnicodeScalar :: Int -> Bool
 isUnicodeScalar code = (0x0 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
 
+parseFloat :: Parser Double
+parseFloat = do
+  applySign <- parseSign
+  num <-
+    choice
+      [ try normalFloat
+      , try $ string "inf" $> inf
+      , try $ string "nan" $> nan
+      ]
+  pure $ applySign num
+  where
+    normalFloat = do
+      intPart <- parseDecIntRaw
+      (fracPart, expPart) <-
+        choice
+          [ try $ (,) <$> pure "" <*> parseExp
+          , (,) <$> parseFrac <*> optionalOr "" parseExp
+          ]
+      pure $ readFloat $ intPart <> fracPart <> expPart
+
+    parseExp =
+      fmap Text.concat . sequence $
+        [ string' "e"
+        , parseSignRaw
+        , parseDigitsRaw digitChar digitChar
+        ]
+    parseFrac =
+      fmap Text.concat . sequence $
+        [ string "."
+        , parseDigitsRaw digitChar digitChar
+        ]
+
+    inf = read "Infinity"
+    nan = read "NaN"
+
 parseInteger :: Parser Integer
 parseInteger =
   choice
@@ -281,15 +316,9 @@ parseInteger =
     ]
   where
     parseSignedDecInt = do
-      sign <- optional $ satisfy $ \c -> c == '-' || c == '+'
-      num <-
-        choice
-          [ try parseUnsignedDecInt
-          , fromIntegral . digitToInt <$> digitChar
-          ]
-      pure $ if sign == Just '-' then -num else num
-    parseUnsignedDecInt =
-      parseDigits readDec (satisfy $ \c -> isDigit c && c /= '0') digitChar
+      applySign <- parseSign
+      num <- readDec <$> parseDecIntRaw
+      pure $ applySign num
     parseHexInt =
       parsePrefixedInt readHex "0x" hexDigitChar
     parseOctInt =
@@ -297,12 +326,31 @@ parseInteger =
     parseBinInt =
       parsePrefixedInt readBin "0b" binDigitChar
 
-    parseDigits readInt parseLeadingDigit parseDigit = do
-      leading <- parseLeadingDigit
-      rest <- many $ optional (char '_') *> parseDigit
-      pure $ readInt $ leading : rest
-    parsePrefixedInt readInt prefix parseDigit =
-      string prefix *> parseDigits readInt parseDigit parseDigit
+    parsePrefixedInt readInt prefix parseDigit = do
+      _ <- string prefix
+      readInt <$> parseDigitsRaw parseDigit parseDigit
+
+-- | Returns "", "-", or "+"
+parseSignRaw :: Parser Text
+parseSignRaw = optionalOr "" (string "-" <|> string "+")
+
+parseSign :: Num a => Parser (a -> a)
+parseSign = do
+  sign <- parseSignRaw
+  pure $ if sign == "-" then negate else id
+
+parseDecIntRaw :: Parser Text
+parseDecIntRaw =
+  choice
+    [ try $ parseDigitsRaw (satisfy $ \c -> isDigit c && c /= '0') digitChar
+    , Text.singleton <$> digitChar
+    ]
+
+parseDigitsRaw :: Parser Char -> Parser Char -> Parser Text
+parseDigitsRaw parseLeadingDigit parseDigit = do
+  leading <- parseLeadingDigit
+  rest <- many $ optional (char '_') *> parseDigit
+  pure $ Text.pack $ leading : rest
 
 parseBoolean :: Parser Bool
 parseBoolean =
@@ -397,26 +445,33 @@ isHSpace :: Char -> Bool
 isHSpace x = isSpace x && x /= '\n' && x /= '\r'
 #endif
 
+optionalOr :: a -> Parser a -> Parser a
+optionalOr def = fmap (fromMaybe def) . optional
+
 exactly :: Int -> Char -> Parser Text
 exactly n c = try $ Text.pack <$> count n (char c) <* notFollowedBy (char c)
 
 {--- Read Helpers ---}
 
 -- | Assumes string satisfies @all isDigit@.
-readDec :: (Show a, Num a, Eq a) => String -> a
+readFloat :: (Show a, RealFrac a) => Text -> a
+readFloat = runReader Numeric.readFloat
+
+-- | Assumes string satisfies @all isDigit@.
+readDec :: (Show a, Num a, Eq a) => Text -> a
 readDec = runReader Numeric.readDec
 
 -- | Assumes string satisfies @all isHexDigit@.
-readHex :: (Show a, Num a, Eq a) => String -> a
+readHex :: (Show a, Num a, Eq a) => Text -> a
 readHex = runReader Numeric.readHex
 
 -- | Assumes string satisfies @all isOctDigit@.
-readOct :: (Show a, Num a, Eq a) => String -> a
+readOct :: (Show a, Num a, Eq a) => Text -> a
 readOct = runReader Numeric.readOct
 
 -- | Assumes string satisfies @all (`elem` "01")@.
-readBin :: (Show a, Num a) => String -> a
-readBin s = foldl' go 0 s
+readBin :: (Show a, Num a) => Text -> a
+readBin = foldl' go 0 . Text.unpack
   where
     go acc x =
       let digit
@@ -425,8 +480,8 @@ readBin s = foldl' go 0 s
             | otherwise = error $ "readBin got unexpected digit: " <> show x
        in 2 * acc + digit
 
-runReader :: Show a => ReadS a -> String -> a
+runReader :: Show a => ReadS a -> Text -> a
 runReader rdr digits =
-  case rdr digits of
+  case rdr $ Text.unpack digits of
     [(x, "")] -> x
     result -> error $ "Unexpectedly unable to parse " <> show digits <> ": " <> show result

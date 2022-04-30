@@ -71,7 +71,7 @@ toTaggedJSON = \case
   Array vs -> Aeson.Array $ Vector.fromList $ map toTaggedJSON vs
   String x -> tagged "string" (Text.unpack x)
   Integer x -> tagged "integer" (show x)
-  Float x -> tagged "float" (show x)
+  Float x -> tagged "float" (showFloat x)
   Boolean x -> tagged "bool" $ if x then "true" else "false"
   OffsetDateTime x -> tagged "datetime" $ iso8601Show x
   LocalDateTime x -> tagged "datetime-local" $ iso8601Show x
@@ -80,6 +80,11 @@ toTaggedJSON = \case
   where
     tagged :: String -> String -> Aeson.Value
     tagged ty v = Aeson.object ["type" .= ty, "value" .= v]
+
+    showFloat x
+      | isNaN x = "nan"
+      | isInfinite x = if x < 0 then "-inf" else "inf"
+      | otherwise = show x
 
 #if MIN_VERSION_aeson(2,0,0)
 toKeyMap :: Map Text Aeson.Value -> KeyMap Aeson.Value
