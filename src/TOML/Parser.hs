@@ -19,6 +19,7 @@ module TOML.Parser (
 import Control.Monad (guard)
 import Control.Monad.Combinators.NonEmpty (sepBy1)
 import Data.Char (chr, isDigit, ord)
+import Data.Fixed (Fixed (..))
 import Data.Foldable (foldl', foldlM)
 import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty)
@@ -27,6 +28,8 @@ import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
+import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
+import qualified Data.Time as Time
 import Data.Void (Void)
 import qualified Numeric
 import Text.Megaparsec hiding (sepBy1)
@@ -126,21 +129,17 @@ parseValue =
     [ try $ Table <$> label "table" parseInlineTable
     , try $ Array <$> label "array" parseInlineArray
     , try $ String <$> label "string" parseString
-    , try $ Float <$> label "float" parseFloat
-    , try $ Integer <$> label "integer" parseInteger
-    , try $ Boolean <$> label "boolean" parseBoolean
     , try $ OffsetDateTime <$> label "offset-datetime" parseOffsetDateTime
     , try $ LocalDateTime <$> label "local-datetime" parseLocalDateTime
     , try $ LocalDate <$> label "local-date" parseLocalDate
-    , LocalTime <$> label "local-time" parseLocalTime
+    , try $ LocalTime <$> label "local-time" parseLocalTime
+    , try $ Float <$> label "float" parseFloat
+    , try $ Integer <$> label "integer" parseInteger
+    , try $ Boolean <$> label "boolean" parseBoolean
     ]
   where
     parseInlineTable = empty -- TODO
     parseInlineArray = empty -- TODO
-    parseOffsetDateTime = empty -- TODO
-    parseLocalDateTime = empty -- TODO
-    parseLocalDate = empty -- TODO
-    parseLocalTime = empty -- TODO
 
 parseString :: Parser Text
 parseString =
@@ -261,15 +260,67 @@ isLiteralChar c =
   where
     code = ord c
 
--- | https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf#L38
-isNonAscii :: Char -> Bool
-isNonAscii c = (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
+parseOffsetDateTime :: Parser UTCTime
+parseOffsetDateTime = do
+  lt <- parseLocalDateTime
+  tz <- parseTimezone
+  return $ Time.localTimeToUTC tz lt
   where
-    code = ord c
+    parseTimezone =
+      choice
+        [ char' 'Z' $> Time.utc
+        , do
+            applySign <- parseSign
+            h <- parseHours
+            _ <- char ':'
+            m <- parseMinutes
+            return $ Time.minutesToTimeZone $ applySign $ h * 60 + m
+        ]
 
--- | https://unicode.org/glossary/#unicode_scalar_value
-isUnicodeScalar :: Int -> Bool
-isUnicodeScalar code = (0x0 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
+parseLocalDateTime :: Parser LocalTime
+parseLocalDateTime = do
+  d <- parseLocalDate
+  _ <- char' 'T' <|> char ' '
+  t <- parseLocalTime
+  return $ Time.LocalTime d t
+
+parseLocalDate :: Parser Day
+parseLocalDate = do
+  y <- parseDecDigits 4
+  _ <- char '-'
+  m <- parseDecDigits 2
+  _ <- char '-'
+  d <- parseDecDigits 2
+  maybe empty return $ Time.fromGregorianValid y m d
+
+parseLocalTime :: Parser TimeOfDay
+parseLocalTime = do
+  h <- parseHours
+  _ <- char ':'
+  m <- parseMinutes
+  _ <- char ':'
+  sInt <- parseSeconds
+  sFracRaw <- optional $ fmap Text.pack $ char '.' >> some digitChar
+  let sFrac = MkFixed $ maybe 0 (readDec . truncateText 12) sFracRaw
+  return $ Time.TimeOfDay h m (fromIntegral sInt + sFrac)
+
+parseHours :: Parser Int
+parseHours = do
+  h <- parseDecDigits 2
+  guard $ 0 <= h && h < 24
+  return h
+
+parseMinutes :: Parser Int
+parseMinutes = do
+  m <- parseDecDigits 2
+  guard $ 0 <= m && m < 60
+  return m
+
+parseSeconds :: Parser Int
+parseSeconds = do
+  s <- parseDecDigits 2
+  guard $ 0 <= s && s <= 60 -- include 60 for leap seconds
+  return s
 
 parseFloat :: Parser Double
 parseFloat = do
@@ -295,12 +346,12 @@ parseFloat = do
       fmap Text.concat . sequence $
         [ string' "e"
         , parseSignRaw
-        , parseDigitsRaw digitChar digitChar
+        , parseNumRaw digitChar digitChar
         ]
     parseFrac =
       fmap Text.concat . sequence $
         [ string "."
-        , parseDigitsRaw digitChar digitChar
+        , parseNumRaw digitChar digitChar
         ]
 
     inf = read "Infinity"
@@ -328,29 +379,7 @@ parseInteger =
 
     parsePrefixedInt readInt prefix parseDigit = do
       _ <- string prefix
-      readInt <$> parseDigitsRaw parseDigit parseDigit
-
--- | Returns "", "-", or "+"
-parseSignRaw :: Parser Text
-parseSignRaw = optionalOr "" (string "-" <|> string "+")
-
-parseSign :: Num a => Parser (a -> a)
-parseSign = do
-  sign <- parseSignRaw
-  pure $ if sign == "-" then negate else id
-
-parseDecIntRaw :: Parser Text
-parseDecIntRaw =
-  choice
-    [ try $ parseDigitsRaw (satisfy $ \c -> isDigit c && c /= '0') digitChar
-    , Text.singleton <$> digitChar
-    ]
-
-parseDigitsRaw :: Parser Char -> Parser Char -> Parser Text
-parseDigitsRaw parseLeadingDigit parseDigit = do
-  leading <- parseLeadingDigit
-  rest <- many $ optional (char '_') *> parseDigit
-  pure $ Text.pack $ leading : rest
+      readInt <$> parseNumRaw parseDigit parseDigit
 
 parseBoolean :: Parser Bool
 parseBoolean =
@@ -420,6 +449,43 @@ normalizeErr = Left . NormalizeError
 
 {--- Parser Helpers ---}
 
+-- | https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf#L38
+isNonAscii :: Char -> Bool
+isNonAscii c = (0x80 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
+  where
+    code = ord c
+
+-- | https://unicode.org/glossary/#unicode_scalar_value
+isUnicodeScalar :: Int -> Bool
+isUnicodeScalar code = (0x0 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)
+
+-- | Returns "", "-", or "+"
+parseSignRaw :: Parser Text
+parseSignRaw = optionalOr "" (string "-" <|> string "+")
+
+parseSign :: Num a => Parser (a -> a)
+parseSign = do
+  sign <- parseSignRaw
+  pure $ if sign == "-" then negate else id
+
+parseDecIntRaw :: Parser Text
+parseDecIntRaw =
+  choice
+    [ try $ parseNumRaw (satisfy $ \c -> isDigit c && c /= '0') digitChar
+    , Text.singleton <$> digitChar
+    ]
+
+parseDecDigits :: (Show a, Num a, Eq a) => Int -> Parser a
+parseDecDigits n = readDec . Text.pack <$> count n digitChar
+
+parseNumRaw :: Parser Char -> Parser Char -> Parser Text
+parseNumRaw parseLeadingDigit parseDigit = do
+  leading <- parseLeadingDigit
+  rest <- many $ optional (char '_') *> parseDigit
+  pure $ Text.pack $ leading : rest
+
+{--- Parser Utilities ---}
+
 hsymbol :: Text -> Parser ()
 hsymbol s = L.symbol hspace s >> pure ()
 
@@ -452,6 +518,12 @@ exactly :: Int -> Char -> Parser Text
 exactly n c = try $ Text.pack <$> count n (char c) <* notFollowedBy (char c)
 
 {--- Read Helpers ---}
+
+truncateText :: Int -> Text -> Text
+truncateText n t =
+  case Text.chunksOf n t of
+    [] -> ""
+    t' : _ -> t'
 
 -- | Assumes string satisfies @all isDigit@.
 readFloat :: (Show a, RealFrac a) => Text -> a
