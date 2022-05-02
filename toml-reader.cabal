@@ -24,6 +24,7 @@ source-repository head
 library
   exposed-modules:
       TOML
+      TOML.Decode
       TOML.Internal
       TOML.Parser
   other-modules:
