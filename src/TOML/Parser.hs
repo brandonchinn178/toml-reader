@@ -54,7 +54,18 @@ parseTOML filename input =
 type Parser = Parsec Void Text
 
 type Key = NonEmpty Text
-type RawTable = [(Key, Value)]
+type RawTable = [(Key, RawValue)]
+data RawValue
+  = RawTable RawTable
+  | RawArray [RawValue]
+  | RawString Text
+  | RawInteger Integer
+  | RawFloat Double
+  | RawBoolean Bool
+  | RawOffsetDateTime UTCTime
+  | RawLocalDateTime LocalTime
+  | RawLocalDate Day
+  | RawLocalTime TimeOfDay
 
 data TOMLDoc = TOMLDoc
   { rootTable :: RawTable
@@ -79,13 +90,7 @@ parseTOMLDocument = do
   return TOMLDoc{..}
 
 parseRawTable :: Parser RawTable
-parseRawTable = many $ do
-  key <- parseKey
-  hsymbol "="
-  value <- parseValue
-  endOfLine
-  emptyLines
-  return (key, value)
+parseRawTable = many $ parseKeyValue <* endOfLine <* emptyLines
 
 parseTableSection :: Parser TableSection
 parseTableSection = do
@@ -102,6 +107,13 @@ parseTableSection = do
   where
     parseHeader brackStart brackEnd = hsymbol brackStart *> parseKey <* hsymbol brackEnd
 
+parseKeyValue :: Parser (Key, RawValue)
+parseKeyValue = do
+  key <- parseKey
+  hsymbol "="
+  value <- parseValue
+  pure (key, value)
+
 parseKey :: Parser Key
 parseKey =
   (`sepBy1` try (hsymbol ".")) . choice $
@@ -115,23 +127,29 @@ parseKey =
         (Just "[A-Za-z0-9_-]")
         (`elem` ['A' .. 'Z'] ++ ['a' .. 'z'] ++ ['0' .. '9'] ++ "-_")
 
-parseValue :: Parser Value
+parseValue :: Parser RawValue
 parseValue =
   choice
-    [ try $ Table <$> label "table" parseInlineTable
-    , try $ Array <$> label "array" parseInlineArray
-    , try $ String <$> label "string" parseString
-    , try $ OffsetDateTime <$> label "offset-datetime" parseOffsetDateTime
-    , try $ LocalDateTime <$> label "local-datetime" parseLocalDateTime
-    , try $ LocalDate <$> label "local-date" parseLocalDate
-    , try $ LocalTime <$> label "local-time" parseLocalTime
-    , try $ Float <$> label "float" parseFloat
-    , try $ Integer <$> label "integer" parseInteger
-    , try $ Boolean <$> label "boolean" parseBoolean
+    [ try $ RawTable <$> label "table" parseInlineTable
+    , try $ RawArray <$> label "array" parseInlineArray
+    , try $ RawString <$> label "string" parseString
+    , try $ RawOffsetDateTime <$> label "offset-datetime" parseOffsetDateTime
+    , try $ RawLocalDateTime <$> label "local-datetime" parseLocalDateTime
+    , try $ RawLocalDate <$> label "local-date" parseLocalDate
+    , try $ RawLocalTime <$> label "local-time" parseLocalTime
+    , try $ RawFloat <$> label "float" parseFloat
+    , try $ RawInteger <$> label "integer" parseInteger
+    , try $ RawBoolean <$> label "boolean" parseBoolean
     ]
   where
-    parseInlineTable = empty -- TODO
     parseInlineArray = empty -- TODO
+
+parseInlineTable :: Parser RawTable
+parseInlineTable = do
+  hsymbol "{"
+  kvs <- parseKeyValue `sepBy` try (hsymbol ",")
+  hsymbol "}"
+  return kvs
 
 parseString :: Parser Text
 parseString =
@@ -387,9 +405,6 @@ normalize TOMLDoc{..} = do
   root <- flattenTable rootTable
   foldlM (flip mergeTableSection) root subTables
   where
-    flattenTable :: RawTable -> Either TOMLError Table
-    flattenTable = foldlM (\t (k, v) -> insertAt k v t) Map.empty
-
     mergeTableSection :: TableSection -> Table -> Either TOMLError Table
     mergeTableSection TableSection{..} baseTable = do
       subTable <- flattenTable tableSectionTable
@@ -402,6 +417,25 @@ normalize TOMLDoc{..} = do
 
     mergeTableSectionArray :: Key -> Table -> Table -> Either TOMLError Table
     mergeTableSectionArray = undefined
+
+flattenTable :: RawTable -> Either TOMLError Table
+flattenTable = foldlM insertRawValue Map.empty
+  where
+    insertRawValue t (k, rawValue) = do
+      v <- toValue rawValue
+      insertAt k v t
+
+    toValue = \case
+      RawTable rawTable -> Table <$> flattenTable rawTable
+      RawArray rawValues -> Array <$> mapM toValue rawValues
+      RawString x -> pure (String x)
+      RawInteger x -> pure (Integer x)
+      RawFloat x -> pure (Float x)
+      RawBoolean x -> pure (Boolean x)
+      RawOffsetDateTime x -> pure (OffsetDateTime x)
+      RawLocalDateTime x -> pure (LocalDateTime x)
+      RawLocalDate x -> pure (LocalDate x)
+      RawLocalTime x -> pure (LocalTime x)
 
 {- |
 Insert Value into Table at Key.
