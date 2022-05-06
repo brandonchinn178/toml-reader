@@ -22,6 +22,7 @@ import Data.Char (chr, isDigit, ord)
 import Data.Fixed (Fixed (..))
 import Data.Foldable (foldl', foldlM)
 import Data.Functor (($>))
+import Data.Functor.Identity (runIdentity)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
@@ -412,19 +413,28 @@ normalize TOMLDoc{..} = do
   where
     mergeTableSection :: TableSection -> Table -> Either TOMLError Table
     mergeTableSection TableSection{..} baseTable = do
-      subTable <- flattenTable tableSectionTable
       case tableSectionHeader of
-        SectionTable key -> mergeTableSectionTable key subTable baseTable
-        SectionTableArray key -> mergeTableSectionArray key subTable baseTable
+        SectionTable key -> mergeTableSectionTable key tableSectionTable baseTable
+        SectionTableArray key -> do
+          subTable <- flattenTable tableSectionTable
+          mergeTableSectionArray key subTable baseTable
 
-    mergeTableSectionTable :: Key -> Table -> Table -> Either TOMLError Table
-    mergeTableSectionTable = undefined
+    mergeTableSectionTable sectionKey table baseTable = do
+      -- prepend section key to all keys in section
+      let table' = map (\(k, v) -> (sectionKey <> k, v)) table
+      -- ensure we initialize an empty table, if there's nothing in the table
+      let baseTable' = initializePath sectionKey baseTable
+      -- merge
+      table' `mergeInto` baseTable'
 
     mergeTableSectionArray :: Key -> Table -> Table -> Either TOMLError Table
     mergeTableSectionArray = undefined
 
 flattenTable :: RawTable -> Either TOMLError Table
-flattenTable = foldlM insertRawValue Map.empty
+flattenTable = (`mergeInto` Map.empty)
+
+mergeInto :: RawTable -> Table -> Either TOMLError Table
+table `mergeInto` baseTable = foldlM insertRawValue baseTable table
   where
     insertRawValue t (k, rawValue) = do
       v <- toValue rawValue
@@ -449,34 +459,72 @@ e.g. `insertAt ["a", "b", "c"] v Map.empty` results in the JSON equivalent
 of `{ "a": { "b": { "c": v } } }`.
 -}
 insertAt :: Key -> Value -> Table -> Either TOMLError Table
-insertAt allKeys val = go [] allKeys
+insertAt path val = modifyValueAtPath callbacks path
   where
-    go history (k NonEmpty.:| ks) table = do
-      let insert =
-            case NonEmpty.nonEmpty ks of
-              Nothing -> \case
-                Nothing -> pure val
-                Just v -> insertFail history k v
-              Just ks' -> \curr -> do
-                subTable <-
-                  case curr of
-                    Nothing -> pure Map.empty
-                    Just (Table subTable) -> pure subTable
-                    Just v -> insertFail history k v
-                Table <$> go (k : history) ks' subTable
+    callbacks =
+      ModifyTableCallbacks
+        { alterEnd = \history -> \case
+            -- if nothing at the path exists, insert the value
+            Nothing -> pure $ Just val
+            -- if something at the path exists, error
+            Just v -> insertFail history v
+        , recurseWith = \history cc -> \case
+            Table subTable -> cc subTable
+            v -> insertFail history v
+        }
 
-      Map.alterF (fmap Just . insert) k table
-
-    insertFail :: [Text] -> Text -> Value -> Either TOMLError a
-    insertFail history key currVal =
+    insertFail :: [Text] -> Value -> Either TOMLError a
+    insertFail history currVal =
       normalizeErr . Text.unlines $
-        [ "Could not add value to path \"" <> Text.intercalate "." (key : history) <> "\":"
-        , "  Setting: " <> Text.intercalate "." (NonEmpty.toList allKeys) <> " = " <> Text.pack (show val)
+        [ "Could not add value to path \"" <> Text.intercalate "." history <> "\":"
+        , "  Setting: " <> Text.intercalate "." (NonEmpty.toList path) <> " = " <> Text.pack (show val)
         , "  Existing value: " <> Text.pack (show currVal)
         ]
 
+-- | Initialize a table at the given path.
+initializePath :: Key -> Table -> Table
+initializePath path table = runIdentity $ modifyValueAtPath callbacks path table
+  where
+    callbacks =
+      ModifyTableCallbacks
+        { alterEnd = \_ ->
+            -- insert an empty Map if a value doesn't already exist
+            pure . Just . fromMaybe (Table Map.empty)
+        , recurseWith = \_ cc -> \case
+            Table subTable -> cc subTable
+            v -> pure v
+        }
+
 normalizeErr :: Text -> Either TOMLError a
 normalizeErr = Left . NormalizeError
+
+type PathHistory = [Text] -- The log of keys traversed so far
+data ModifyTableCallbacks f = ModifyTableCallbacks
+  { alterEnd :: PathHistory -> Maybe Value -> f (Maybe Value)
+  -- ^ Alter the (possibly missing) value at the end of the path.
+  , recurseWith :: PathHistory -> (Table -> f Value) -> Value -> f Value
+  -- ^ Decide how to modify a value encountered along the path. Use the given function
+  -- to continue traversing.
+  }
+
+-- | A helper for recursing through a Table.
+modifyValueAtPath :: Functor f => ModifyTableCallbacks f -> Key -> Table -> f Table
+modifyValueAtPath ModifyTableCallbacks{..} = go []
+  where
+    go history (k NonEmpty.:| ks) table = Map.alterF (handle (history ++ [k]) ks) k table
+    handle history ks mVal =
+      case NonEmpty.nonEmpty ks of
+        -- when we're at the last key
+        Nothing -> alterEnd history mVal
+        -- when we want to keep recursing ...
+        Just ks' ->
+          let cc = fmap Table . go history ks'
+           in fmap Just $
+                case mVal of
+                  -- ... and nothing exists, recurse into a new empty Map
+                  Nothing -> cc Map.empty
+                  -- ... and something exists, run the callback
+                  Just v -> recurseWith history cc v
 
 {--- Parser Helpers ---}
 
