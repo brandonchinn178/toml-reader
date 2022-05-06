@@ -141,8 +141,6 @@ parseValue =
     , try $ RawInteger <$> label "integer" parseInteger
     , try $ RawBoolean <$> label "boolean" parseBoolean
     ]
-  where
-    parseInlineArray = empty -- TODO
 
 parseInlineTable :: Parser RawTable
 parseInlineTable = do
@@ -150,6 +148,13 @@ parseInlineTable = do
   kvs <- parseKeyValue `sepBy` try (hsymbol ",")
   hsymbol "}"
   return kvs
+
+parseInlineArray :: Parser [RawValue]
+parseInlineArray = do
+  _ <- char '[' <* emptyLines
+  vs <- (parseValue <* emptyLines) `sepEndBy` (char ',' <* emptyLines)
+  _ <- char ']'
+  return vs
 
 parseString :: Parser Text
 parseString =
