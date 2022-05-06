@@ -81,9 +81,7 @@ parseTOMLDocument = do
 parseRawTable :: Parser RawTable
 parseRawTable = many $ do
   key <- parseKey
-  hspace
-  _ <- char '='
-  hspace
+  hsymbol "="
   value <- parseValue
   endOfLine
   emptyLines
@@ -102,17 +100,11 @@ parseTableSection = do
   emptyLines
   return TableSection{..}
   where
-    parseHeader brackStart brackEnd = do
-      _ <- string brackStart
-      hspace
-      key <- parseKey
-      hspace
-      _ <- string brackEnd
-      return key
+    parseHeader brackStart brackEnd = hsymbol brackStart *> parseKey <* hsymbol brackEnd
 
 parseKey :: Parser Key
 parseKey =
-  (`sepBy1` hsymbol ".") . choice $
+  (`sepBy1` try (hsymbol ".")) . choice $
     [ parseBasicString
     , parseLiteralString
     , parseUnquotedKey
@@ -154,7 +146,7 @@ parseString =
 parseBasicString :: Parser Text
 parseBasicString =
   label "double-quoted string" $
-    between (hsymbol "\"") (hsymbol "\"") $
+    between (char '"') (char '"') $
       fmap Text.pack . many . choice $
         [ satisfy isBasicChar
         , parseEscaped
@@ -164,7 +156,7 @@ parseBasicString =
 parseLiteralString :: Parser Text
 parseLiteralString =
   label "single-quoted string" $
-    between (hsymbol "'") (hsymbol "'") $ takeWhileP (Just "literal-char") isLiteralChar
+    between (char '\'') (char '\'') $ takeWhileP (Just "literal-char") isLiteralChar
 
 -- | A multiline string with three double quotes.
 parseMultilineBasicString :: Parser Text
@@ -487,7 +479,7 @@ parseNumRaw parseLeadingDigit parseDigit = do
 {--- Parser Utilities ---}
 
 hsymbol :: Text -> Parser ()
-hsymbol s = L.symbol hspace s >> pure ()
+hsymbol s = hspace >> string s >> hspace >> pure ()
 
 -- | Parse trailing whitespace/trailing comments + newline
 endOfLine :: Parser ()
