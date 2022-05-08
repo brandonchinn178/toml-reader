@@ -45,8 +45,6 @@ jobs:
       - name: Test validator
         run: |
           stack test :parser-validator --coverage --ta '
-            -skip valid/table/array-nest
-            -skip valid/table/array-table-array
             -skip invalid/array/tables-1
             -skip invalid/control/bare-cr
             -skip invalid/control/comment-cr

@@ -484,12 +484,10 @@ insertAt path defaultVal updateVal = modifyValueAtPathF callbacks path
               case updateVal v of
                 Just v' -> pure $ Just v'
                 Nothing -> insertFail history v
-        , recurseWith = \history cc -> \case
-            Table subTable -> cc subTable
-            v -> insertFail history v
+        , onMidPathValue = insertFail
         }
 
-    insertFail :: [Text] -> Value -> Either TOMLError a
+    insertFail :: PathHistory -> Value -> Either TOMLError a
     insertFail history currVal =
       normalizeErr . Text.unlines $
         [ "Could not add value to path \"" <> Text.intercalate "." history <> "\":"
@@ -505,9 +503,7 @@ initializePath =
       { alterEnd = \_ ->
           -- insert an empty Map if a value doesn't already exist
           pure . Just . fromMaybe (Table Map.empty)
-      , recurseWith = \_ cc -> \case
-          Table subTable -> cc subTable
-          v -> pure v
+      , onMidPathValue = \_ -> pure
       }
 
 normalizeErr :: Text -> Either TOMLError a
@@ -517,9 +513,8 @@ type PathHistory = [Text] -- The log of keys traversed so far
 data ModifyTableCallbacks f = ModifyTableCallbacks
   { alterEnd :: PathHistory -> Maybe Value -> f (Maybe Value)
   -- ^ Alter the (possibly missing) value at the end of the path.
-  , recurseWith :: PathHistory -> (Table -> f Value) -> Value -> f Value
-  -- ^ Decide how to modify a value encountered along the path. Use the given function
-  -- to continue traversing.
+  , onMidPathValue :: PathHistory -> Value -> f Value
+  -- ^ Alter a value in the middle of the path, when not recursing
   }
 
 -- | A helper for recursing through a Table.
@@ -533,13 +528,24 @@ modifyValueAtPathF ModifyTableCallbacks{..} = go []
         Nothing -> alterEnd history mVal
         -- when we want to keep recursing ...
         Just ks' ->
-          let cc = fmap Table . go history ks'
+          let go' = fmap Table . go history ks'
            in fmap Just $
                 case mVal of
                   -- ... and nothing exists, recurse into a new empty Map
-                  Nothing -> cc Map.empty
-                  -- ... and something exists, run the callback
-                  Just v -> recurseWith history cc v
+                  Nothing -> go' Map.empty
+                  -- ... and Table exists, recurse into it
+                  Just (Table subTable) -> go' subTable
+                  -- ... and Array exists, recurse into the last Table, per spec:
+                  --   Any reference to an array of tables points to the
+                  --   most recently defined table element of the array.
+                  Just (Array vs)
+                    | Just vs' <- NonEmpty.nonEmpty vs
+                    , Table subTable <- NonEmpty.last vs' ->
+                        Array . snoc (NonEmpty.init vs') <$> go' subTable
+                  -- ... and something else exists, call onMidPathValue callback
+                  Just v -> onMidPathValue history v
+
+    snoc xs x = xs <> [x]
 
 modifyValueAtPath :: ModifyTableCallbacks Identity -> Key -> Table -> Table
 modifyValueAtPath callbacks key table = runIdentity $ modifyValueAtPathF callbacks key table
