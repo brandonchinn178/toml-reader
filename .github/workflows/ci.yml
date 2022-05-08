@@ -45,12 +45,7 @@ jobs:
       - name: Test validator
         run: |
           stack test :parser-validator --coverage --ta '
-            -skip valid/inline-table/key-dotted
-            -skip valid/key/dotted
-            -skip valid/table/array-implicit
-            -skip valid/table/array-many
             -skip valid/table/array-nest
-            -skip valid/table/array-one
             -skip valid/table/array-table-array
             -skip invalid/array/missing-separator
             -skip invalid/array/no-close-2
