@@ -46,12 +46,6 @@ jobs:
         run: |
           stack test :parser-validator --coverage --ta '
             -skip invalid/array/tables-1
-            -skip invalid/control/bare-cr
-            -skip invalid/control/comment-cr
-            -skip invalid/control/comment-del
-            -skip invalid/control/comment-lf
-            -skip invalid/control/comment-null
-            -skip invalid/control/comment-us
             -skip invalid/inline-table/add
             -skip invalid/table/append-with-dotted-keys-1
             -skip invalid/table/append-with-dotted-keys-2

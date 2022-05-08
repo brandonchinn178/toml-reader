@@ -16,9 +16,9 @@ module TOML.Parser (
   parseTOML,
 ) where
 
-import Control.Monad (guard)
+import Control.Monad (guard, void)
 import Control.Monad.Combinators.NonEmpty (sepBy1)
-import Data.Char (chr, isDigit, ord)
+import Data.Char (chr, isDigit, isSpace, ord)
 import Data.Fixed (Fixed (..))
 import Data.Foldable (foldl', foldlM)
 import Data.Functor (($>))
@@ -34,13 +34,8 @@ import qualified Data.Time as Time
 import Data.Void (Void)
 import qualified Numeric
 import Text.Megaparsec hiding (sepBy1)
-import Text.Megaparsec.Char
+import Text.Megaparsec.Char hiding (space, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
-
-#if !MIN_VERSION_megaparsec(9,0,0)
-import Control.Monad (void)
-import Data.Char (isSpace)
-#endif
 
 import TOML.Internal (TOMLError (..), Table, Value (..))
 
@@ -601,7 +596,25 @@ emptyLines :: Parser ()
 emptyLines = L.space space1 skipComments empty
 
 skipComments :: Parser ()
-skipComments = L.skipLineComment "#"
+skipComments = do
+  _ <- string "#"
+  void . many $ do
+    c <- satisfy (/= '\n')
+    let code = ord c
+    case c of
+      '\r' -> void $ lookAhead (char '\n')
+      _
+        | (0x00 <= code && code <= 0x08) || (0x0A <= code && code <= 0x1F) || code == 0x7F ->
+            fail $ "Comment has invalid character: \\" <> show code
+      _ -> pure ()
+
+space, space1 :: Parser ()
+space = void $ many parseSpace
+space1 = void $ some parseSpace
+
+-- | TOML does not support bare '\r' without '\n'.
+parseSpace :: Parser ()
+parseSpace = void (satisfy (\c -> isSpace c && c /= '\r')) <|> void (string "\r\n")
 
 #if !MIN_VERSION_megaparsec(9,0,0)
 hspace :: Parser ()
