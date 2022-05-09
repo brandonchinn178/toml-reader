@@ -48,23 +48,26 @@ parseTOML filename input =
     Left e -> Left $ ParseError $ Text.pack $ errorBundlePretty e
     Right result -> Table <$> normalize result
 
+-- 'Value' generalized to allow for unnormalized + annotated Values.
+data GenericValue key tableMeta arrayMeta
+  = GenericTable tableMeta [(key, GenericValue key tableMeta arrayMeta)]
+  | GenericArray arrayMeta [GenericValue key tableMeta arrayMeta]
+  | GenericString Text
+  | GenericInteger Integer
+  | GenericFloat Double
+  | GenericBoolean Bool
+  | GenericOffsetDateTime UTCTime
+  | GenericLocalDateTime LocalTime
+  | GenericLocalDate Day
+  | GenericLocalTime TimeOfDay
+
 {--- Parse raw document ---}
 
 type Parser = Parsec Void Text
 
 type Key = NonEmpty Text
 type RawTable = [(Key, RawValue)]
-data RawValue
-  = RawTable RawTable
-  | RawArray [RawValue]
-  | RawString Text
-  | RawInteger Integer
-  | RawFloat Double
-  | RawBoolean Bool
-  | RawOffsetDateTime UTCTime
-  | RawLocalDateTime LocalTime
-  | RawLocalDate Day
-  | RawLocalTime TimeOfDay
+type RawValue = GenericValue Key () ()
 
 data TOMLDoc = TOMLDoc
   { rootTable :: RawTable
@@ -129,16 +132,16 @@ parseKey =
 parseValue :: Parser RawValue
 parseValue =
   choice
-    [ try $ RawTable <$> label "table" parseInlineTable
-    , try $ RawArray <$> label "array" parseInlineArray
-    , try $ RawString <$> label "string" parseString
-    , try $ RawOffsetDateTime <$> label "offset-datetime" parseOffsetDateTime
-    , try $ RawLocalDateTime <$> label "local-datetime" parseLocalDateTime
-    , try $ RawLocalDate <$> label "local-date" parseLocalDate
-    , try $ RawLocalTime <$> label "local-time" parseLocalTime
-    , try $ RawFloat <$> label "float" parseFloat
-    , try $ RawInteger <$> label "integer" parseInteger
-    , try $ RawBoolean <$> label "boolean" parseBoolean
+    [ try $ GenericTable () <$> label "table" parseInlineTable
+    , try $ GenericArray () <$> label "array" parseInlineArray
+    , try $ GenericString <$> label "string" parseString
+    , try $ GenericOffsetDateTime <$> label "offset-datetime" parseOffsetDateTime
+    , try $ GenericLocalDateTime <$> label "local-datetime" parseLocalDateTime
+    , try $ GenericLocalDate <$> label "local-date" parseLocalDate
+    , try $ GenericLocalTime <$> label "local-time" parseLocalTime
+    , try $ GenericFloat <$> label "float" parseFloat
+    , try $ GenericInteger <$> label "integer" parseInteger
+    , try $ GenericBoolean <$> label "boolean" parseBoolean
     ]
 
 parseInlineTable :: Parser RawTable
@@ -578,16 +581,16 @@ table `mergeInto` baseTable = foldlM insertRawValue baseTable table
       modifyValueAtPathF callbacks key accTable
 
     toValue = \case
-      RawTable rawTable -> Table <$> flattenTable rawTable
-      RawArray rawValues -> Array <$> mapM toValue rawValues
-      RawString x -> pure (String x)
-      RawInteger x -> pure (Integer x)
-      RawFloat x -> pure (Float x)
-      RawBoolean x -> pure (Boolean x)
-      RawOffsetDateTime x -> pure (OffsetDateTime x)
-      RawLocalDateTime x -> pure (LocalDateTime x)
-      RawLocalDate x -> pure (LocalDate x)
-      RawLocalTime x -> pure (LocalTime x)
+      GenericTable _ rawTable -> Table <$> flattenTable rawTable
+      GenericArray _ rawValues -> Array <$> mapM toValue rawValues
+      GenericString x -> pure (String x)
+      GenericInteger x -> pure (Integer x)
+      GenericFloat x -> pure (Float x)
+      GenericBoolean x -> pure (Boolean x)
+      GenericOffsetDateTime x -> pure (OffsetDateTime x)
+      GenericLocalDateTime x -> pure (LocalDateTime x)
+      GenericLocalDate x -> pure (LocalDate x)
+      GenericLocalTime x -> pure (LocalTime x)
 
 -- | Initialize a table at the given path.
 initializePath :: Key -> Table -> Table
