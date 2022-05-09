@@ -406,6 +406,7 @@ parseBoolean =
 
 data NormalizeState = NormalizeState
   { tableSections :: Set Key
+  , staticTables :: Set Key
   , staticArrays :: Set Key
   }
   deriving (Show)
@@ -445,6 +446,7 @@ normalize = fmap fst . (`runNormalizeM` emptyState) . normalize'
     emptyState =
       NormalizeState
         { tableSections = Set.empty
+        , staticTables = Set.empty
         , staticArrays = Set.empty
         }
 
@@ -458,6 +460,7 @@ normalize' TOMLDoc{..} = do
       case tableSectionHeader of
         SectionTable key -> do
           checkDuplicateSection key
+          checkExtendsStaticTable key
           mergeTableSectionTable key tableSectionTable baseTable
         SectionTableArray key -> do
           subTable <- flattenTable tableSectionTable
@@ -512,16 +515,28 @@ normalize' TOMLDoc{..} = do
             }
       setState state{tableSections = Set.insert sectionKey $ tableSections state}
 
+    checkExtendsStaticTable sectionKey = do
+      state <- getState
+      case Set.toList $ Set.filter (`isNonEmptyPrefixOf` sectionKey) $ staticTables state of
+        [] -> pure ()
+        key : _ ->
+          normalizeError
+            ExtendTableError
+              { _path = NonEmpty.toList key
+              , _originalKey = NonEmpty.toList sectionKey
+              }
+
     -- every time we declare a new [[a.b]] section, we're in a new table, so we need
     -- to clear any keys with this prefix so we don't conflict with previous tables
     clearSectionsWithin sectionKey = do
-      let isWithinSection key = NonEmpty.toList sectionKey `NonEmpty.isPrefixOf` key
-          clearWithin = Set.filter (not . isWithinSection)
+      let clearWithin = Set.filter (not . (sectionKey `isNonEmptyPrefixOf`))
       modifyState $ \state ->
         state
           { tableSections = clearWithin $ tableSections state
           , staticArrays = clearWithin $ staticArrays state
           }
+
+    a `isNonEmptyPrefixOf` b = NonEmpty.toList a `NonEmpty.isPrefixOf` b
 
 flattenTable :: RawTable -> NormalizeM Table
 flattenTable = (`mergeInto` Map.empty)
@@ -536,6 +551,9 @@ table `mergeInto` baseTable = foldlM insertRawValue baseTable table
               { alterEnd = \case
                   Nothing -> do
                     case value of
+                      Table{} ->
+                        modifyState $ \state ->
+                          state{staticTables = Set.insert key $ staticTables state}
                       Array{} ->
                         modifyState $ \state ->
                           state{staticArrays = Set.insert key $ staticArrays state}

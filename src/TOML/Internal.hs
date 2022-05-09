@@ -84,6 +84,16 @@ data NormalizeError
     DuplicateSectionError
       { _sectionKey :: [Text]
       }
+  | -- | When a section attempts to extend an inline table
+    --
+    -- @
+    -- a = {}
+    -- [a.b]
+    -- @
+    ExtendTableError
+      { _path :: [Text]
+      , _originalKey :: [Text]
+      }
   | -- | When a key is already defined, but attempting to create an
     -- implicit array at the same key, e.g.
     --
@@ -136,6 +146,11 @@ renderTOMLError = \case
       , "  Value to set: " <> renderValue _valueToSet
       ]
   NormalizeError DuplicateSectionError{..} -> "Found duplicate section: " <> showPath _sectionKey
+  NormalizeError ExtendTableError{..} ->
+    Text.unlines
+      [ "Invalid table key: " <> showPath _originalKey
+      , "  Table already statically defined at " <> showPath _path
+      ]
   NormalizeError ImplicitArrayForDefinedKeyError{..} ->
     Text.unlines
       [ "Could not create implicit array at path " <> showPath _path <> ":"
