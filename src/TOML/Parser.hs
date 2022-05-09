@@ -401,15 +401,30 @@ parseBoolean =
 
 {--- Normalize into Value ---}
 
-normalizeError :: NormalizeError -> Either TOMLError a
-normalizeError = Left . NormalizeError
+newtype NormalizeM a = NormalizeM
+  { runNormalizeM :: Either TOMLError a
+  }
+
+instance Functor NormalizeM where
+  fmap f = NormalizeM . fmap f . runNormalizeM
+instance Applicative NormalizeM where
+  pure = NormalizeM . pure
+  NormalizeM f <*> NormalizeM x = NormalizeM (f <*> x)
+instance Monad NormalizeM where
+  NormalizeM m >>= f = NormalizeM $ runNormalizeM . f =<< m
+
+normalizeError :: NormalizeError -> NormalizeM a
+normalizeError e = NormalizeM $ Left $ NormalizeError e
 
 normalize :: TOMLDoc -> Either TOMLError Table
-normalize TOMLDoc{..} = do
+normalize = runNormalizeM . normalize'
+
+normalize' :: TOMLDoc -> NormalizeM Table
+normalize' TOMLDoc{..} = do
   root <- flattenTable rootTable
   foldlM (flip mergeTableSection) root subTables
   where
-    mergeTableSection :: TableSection -> Table -> Either TOMLError Table
+    mergeTableSection :: TableSection -> Table -> NormalizeM Table
     mergeTableSection TableSection{..} baseTable = do
       case tableSectionHeader of
         SectionTable key -> mergeTableSectionTable key tableSectionTable baseTable
@@ -425,7 +440,7 @@ normalize TOMLDoc{..} = do
       -- merge
       table' `mergeInto` baseTable'
 
-    mergeTableSectionArray :: Key -> Table -> Table -> Either TOMLError Table
+    mergeTableSectionArray :: Key -> Table -> Table -> NormalizeM Table
     mergeTableSectionArray sectionKey table baseTable = do
       let callbacks =
             ModifyTableCallbacks
@@ -453,10 +468,10 @@ normalize TOMLDoc{..} = do
               }
       modifyValueAtPathF callbacks sectionKey baseTable
 
-flattenTable :: RawTable -> Either TOMLError Table
+flattenTable :: RawTable -> NormalizeM Table
 flattenTable = (`mergeInto` Map.empty)
 
-mergeInto :: RawTable -> Table -> Either TOMLError Table
+mergeInto :: RawTable -> Table -> NormalizeM Table
 table `mergeInto` baseTable = foldlM insertRawValue baseTable table
   where
     insertRawValue accTable (key, rawValue) = do
