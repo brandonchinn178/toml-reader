@@ -16,8 +16,9 @@ module TOML.Parser (
   parseTOML,
 ) where
 
-import Control.Monad (guard, void)
+import Control.Monad (guard, void, when)
 import Control.Monad.Combinators.NonEmpty (sepBy1)
+import Data.Bifunctor (first)
 import Data.Char (chr, isDigit, isSpace, ord)
 import Data.Fixed (Fixed (..))
 import Data.Foldable (foldl', foldlM)
@@ -27,6 +28,8 @@ import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
@@ -401,23 +404,47 @@ parseBoolean =
 
 {--- Normalize into Value ---}
 
+data NormalizeState = NormalizeState
+  { tableSections :: Set Key
+  }
+  deriving (Show)
+
 newtype NormalizeM a = NormalizeM
-  { runNormalizeM :: Either TOMLError a
+  { runNormalizeM :: NormalizeState -> Either TOMLError (a, NormalizeState)
   }
 
 instance Functor NormalizeM where
-  fmap f = NormalizeM . fmap f . runNormalizeM
+  fmap f m = NormalizeM $ fmap (first f) . runNormalizeM m
 instance Applicative NormalizeM where
-  pure = NormalizeM . pure
-  NormalizeM f <*> NormalizeM x = NormalizeM (f <*> x)
+  pure x = NormalizeM $ \s -> return (x, s)
+  NormalizeM mf <*> NormalizeM mx = NormalizeM $ \s -> do
+    (f, s') <- mf s
+    (x, s'') <- mx s'
+    return (f x, s'')
 instance Monad NormalizeM where
-  NormalizeM m >>= f = NormalizeM $ runNormalizeM . f =<< m
+  m >>= f = NormalizeM $ \s -> do
+    (a, s') <- runNormalizeM m s
+    runNormalizeM (f a) s'
+
+getState :: NormalizeM NormalizeState
+getState = NormalizeM $ \s -> pure (s, s)
+
+modifyState :: (NormalizeState -> NormalizeState) -> NormalizeM ()
+modifyState f = NormalizeM $ \s -> pure ((), f s)
+
+setState :: NormalizeState -> NormalizeM ()
+setState = modifyState . const
 
 normalizeError :: NormalizeError -> NormalizeM a
-normalizeError e = NormalizeM $ Left $ NormalizeError e
+normalizeError e = NormalizeM $ \_ -> Left $ NormalizeError e
 
 normalize :: TOMLDoc -> Either TOMLError Table
-normalize = runNormalizeM . normalize'
+normalize = fmap fst . (`runNormalizeM` emptyState) . normalize'
+  where
+    emptyState =
+      NormalizeState
+        { tableSections = Set.empty
+        }
 
 normalize' :: TOMLDoc -> NormalizeM Table
 normalize' TOMLDoc{..} = do
@@ -427,8 +454,11 @@ normalize' TOMLDoc{..} = do
     mergeTableSection :: TableSection -> Table -> NormalizeM Table
     mergeTableSection TableSection{..} baseTable = do
       case tableSectionHeader of
-        SectionTable key -> mergeTableSectionTable key tableSectionTable baseTable
+        SectionTable key -> do
+          checkDuplicateSection key
+          mergeTableSectionTable key tableSectionTable baseTable
         SectionTableArray key -> do
+          clearSectionsWithin key
           subTable <- flattenTable tableSectionTable
           mergeTableSectionArray key subTable baseTable
 
@@ -467,6 +497,22 @@ normalize' TOMLDoc{..} = do
                       }
               }
       modifyValueAtPathF callbacks sectionKey baseTable
+
+    checkDuplicateSection sectionKey = do
+      state <- getState
+      when (sectionKey `Set.member` tableSections state) $
+        normalizeError
+          DuplicateSectionError
+            { _sectionKey = NonEmpty.toList sectionKey
+            }
+      setState state{tableSections = Set.insert sectionKey $ tableSections state}
+
+    -- every time we declare a new [[a.b]] section, we're in a new table, so we need
+    -- to clear any keys with this prefix so we don't conflict with previous tables
+    clearSectionsWithin sectionKey = do
+      let isWithinSection key = NonEmpty.toList sectionKey `NonEmpty.isPrefixOf` key
+      modifyState $ \state ->
+        state{tableSections = Set.filter (not . isWithinSection) $ tableSections state}
 
 flattenTable :: RawTable -> NormalizeM Table
 flattenTable = (`mergeInto` Map.empty)

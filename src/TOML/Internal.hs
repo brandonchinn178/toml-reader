@@ -72,6 +72,18 @@ data NormalizeError
       , _existingValue :: Value
       , _valueToSet :: Value
       }
+  | -- | When a section is defined twice, e.g.
+    --
+    -- @
+    -- [foo]
+    -- a = 1
+    --
+    -- [foo]
+    -- b = 2
+    -- @
+    DuplicateSectionError
+      { _sectionKey :: [Text]
+      }
   | -- | When a key is already defined, but attempting to create an
     -- implicit array at the same key, e.g.
     --
@@ -123,6 +135,7 @@ renderTOMLError = \case
       , "  Existing value: " <> renderValue _existingValue
       , "  Value to set: " <> renderValue _valueToSet
       ]
+  NormalizeError DuplicateSectionError{..} -> "Found duplicate section: " <> showPath _sectionKey
   NormalizeError ImplicitArrayForDefinedKeyError{..} ->
     Text.unlines
       [ "Could not create implicit array at path " <> showPath _path <> ":"

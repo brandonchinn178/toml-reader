@@ -52,7 +52,6 @@ jobs:
             -skip invalid/table/duplicate-key-dotted-table
             -skip invalid/table/duplicate-key-dotted-table2
             -skip invalid/table/duplicate-table-array2
-            -skip invalid/table/duplicate
           '
 
       - name: Check that Cabal file was generated
