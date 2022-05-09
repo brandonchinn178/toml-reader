@@ -7,8 +7,10 @@ module TOML (
 
   -- * TOML types
   Value (..),
+  renderValue,
   Table,
   TOMLError (..),
+  renderTOMLError,
 ) where
 
 import TOML.Decode

@@ -17,7 +17,7 @@ import System.Exit (exitFailure)
 import System.IO (stderr)
 import System.Process (callProcess)
 
-import TOML (TOMLError (..), Value (..))
+import TOML (Value (..), renderTOMLError)
 import TOML.Parser (parseTOML)
 
 #if MIN_VERSION_aeson(2,0,0)
@@ -59,10 +59,7 @@ checkTOML = do
   Char8.putStrLn $ Aeson.encode $ toTaggedJSON output
   where
     handleError e = do
-      Text.hPutStrLn stderr $
-        case e of
-          ParseError s -> s
-          NormalizeError s -> s
+      Text.hPutStrLn stderr $ renderTOMLError e
       exitFailure
 
 toTaggedJSON :: Value -> Aeson.Value

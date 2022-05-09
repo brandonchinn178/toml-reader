@@ -37,7 +37,7 @@ import Text.Megaparsec hiding (sepBy1)
 import Text.Megaparsec.Char hiding (space, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 
-import TOML.Internal (TOMLError (..), Table, Value (..))
+import TOML.Internal (NormalizeError (..), TOMLError (..), Table, Value (..))
 
 parseTOML :: String -> Text -> Either TOMLError Value
 parseTOML filename input =
@@ -401,6 +401,9 @@ parseBoolean =
 
 {--- Normalize into Value ---}
 
+normalizeError :: NormalizeError -> Either TOMLError a
+normalizeError = Left . NormalizeError
+
 normalize :: TOMLDoc -> Either TOMLError Table
 normalize TOMLDoc{..} = do
   root <- flattenTable rootTable
@@ -424,11 +427,31 @@ normalize TOMLDoc{..} = do
 
     mergeTableSectionArray :: Key -> Table -> Table -> Either TOMLError Table
     mergeTableSectionArray sectionKey table baseTable = do
-      let defaultVal = Array [Table table]
-          updateVal = \case
-            Array l -> Just $ Array $ l <> [Table table]
-            _ -> Nothing
-      insertAt sectionKey defaultVal updateVal baseTable
+      let callbacks =
+            ModifyTableCallbacks
+              { alterEnd = \case
+                  -- if nothing exists, insert table into a new array
+                  Nothing -> pure $ Just $ Array [Table table]
+                  -- if an array exists, insert table to the end of the array
+                  Just (Array l) -> pure $ Just $ Array $ l <> [Table table]
+                  -- otherwise, error
+                  Just existingValue ->
+                    normalizeError
+                      ImplicitArrayForDefinedKeyError
+                        { _path = NonEmpty.toList sectionKey
+                        , _existingValue = existingValue
+                        , _tableSection = table
+                        }
+              , onMidPathValue = \history existingValue ->
+                  normalizeError
+                    NonTableInNestedImplicitArrayError
+                      { _path = history
+                      , _existingValue = existingValue
+                      , _sectionKey = NonEmpty.toList sectionKey
+                      , _tableSection = table
+                      }
+              }
+      modifyValueAtPathF callbacks sectionKey baseTable
 
 flattenTable :: RawTable -> Either TOMLError Table
 flattenTable = (`mergeInto` Map.empty)
@@ -436,9 +459,29 @@ flattenTable = (`mergeInto` Map.empty)
 mergeInto :: RawTable -> Table -> Either TOMLError Table
 table `mergeInto` baseTable = foldlM insertRawValue baseTable table
   where
-    insertRawValue t (k, rawValue) = do
-      v <- toValue rawValue
-      insertAt k v (const Nothing) t
+    insertRawValue accTable (key, rawValue) = do
+      value <- toValue rawValue
+      let callbacks =
+            ModifyTableCallbacks
+              { alterEnd = \case
+                  Nothing -> pure $ Just value
+                  Just existingValue ->
+                    normalizeError
+                      DuplicateKeyError
+                        { _path = NonEmpty.toList key
+                        , _existingValue = existingValue
+                        , _valueToSet = value
+                        }
+              , onMidPathValue = \history existingValue ->
+                  normalizeError
+                    NonTableInNestedKeyError
+                      { _path = history
+                      , _existingValue = existingValue
+                      , _originalKey = NonEmpty.toList key
+                      , _originalValue = value
+                      }
+              }
+      modifyValueAtPathF callbacks key accTable
 
     toValue = \case
       RawTable rawTable -> Table <$> flattenTable rawTable
@@ -452,61 +495,20 @@ table `mergeInto` baseTable = foldlM insertRawValue baseTable table
       RawLocalDate x -> pure (LocalDate x)
       RawLocalTime x -> pure (LocalTime x)
 
-{- |
-Insert into the given Table at the given Key.
-
-Traverses through the table with the given Key (e.g. the Key ["a", "b"] would create
-Tables along the way and use the given function to insert the value at key "b" in an
-object at key "a" in the Table).
-
-If we cannot continue recursing through the tables (i.e. one of the keys in the path
-is not a Table), return an error. If the transformation function returns Nothing,
-also return an error.
--}
-insertAt ::
-  Key ->
-  Value -> -- the Value to insert if nothing exists
-  (Value -> Maybe Value) -> -- the transformation function if something exists
-  Table ->
-  Either TOMLError Table
-insertAt path defaultVal updateVal = modifyValueAtPathF callbacks path
-  where
-    callbacks =
-      ModifyTableCallbacks
-        { alterEnd = \history -> \case
-            Nothing -> pure $ Just defaultVal
-            Just v ->
-              case updateVal v of
-                Just v' -> pure $ Just v'
-                Nothing -> insertFail history v
-        , onMidPathValue = insertFail
-        }
-
-    insertFail :: PathHistory -> Value -> Either TOMLError a
-    insertFail history currVal =
-      normalizeErr . Text.unlines $
-        [ "Could not add value to path \"" <> Text.intercalate "." history <> "\":"
-        , "  Existing value: " <> Text.pack (show currVal)
-        , "  Inserting at path \"" <> Text.intercalate "." (NonEmpty.toList path) <> "\": " <> Text.pack (show defaultVal)
-        ]
-
 -- | Initialize a table at the given path.
 initializePath :: Key -> Table -> Table
 initializePath =
   modifyValueAtPath
     ModifyTableCallbacks
-      { alterEnd = \_ ->
+      { alterEnd =
           -- insert an empty Map if a value doesn't already exist
           pure . Just . fromMaybe (Table Map.empty)
       , onMidPathValue = \_ -> pure
       }
 
-normalizeErr :: Text -> Either TOMLError a
-normalizeErr = Left . NormalizeError
-
 type PathHistory = [Text] -- The log of keys traversed so far
 data ModifyTableCallbacks f = ModifyTableCallbacks
-  { alterEnd :: PathHistory -> Maybe Value -> f (Maybe Value)
+  { alterEnd :: Maybe Value -> f (Maybe Value)
   -- ^ Alter the (possibly missing) value at the end of the path.
   , onMidPathValue :: PathHistory -> Value -> f Value
   -- ^ Alter a value in the middle of the path, when not recursing
@@ -520,7 +522,7 @@ modifyValueAtPathF ModifyTableCallbacks{..} = go []
     handle history ks mVal =
       case NonEmpty.nonEmpty ks of
         -- when we're at the last key
-        Nothing -> alterEnd history mVal
+        Nothing -> alterEnd mVal
         -- when we want to keep recursing ...
         Just ks' ->
           let go' = fmap Table . go history ks'
