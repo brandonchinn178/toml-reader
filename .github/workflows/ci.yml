@@ -45,7 +45,6 @@ jobs:
       - name: Test validator
         run: |
           stack test :parser-validator --coverage --ta '
-            -skip invalid/array/tables-1
             -skip invalid/inline-table/add
             -skip invalid/table/append-with-dotted-keys-1
             -skip invalid/table/append-with-dotted-keys-2

@@ -406,6 +406,7 @@ parseBoolean =
 
 data NormalizeState = NormalizeState
   { tableSections :: Set Key
+  , staticArrays :: Set Key
   }
   deriving (Show)
 
@@ -444,6 +445,7 @@ normalize = fmap fst . (`runNormalizeM` emptyState) . normalize'
     emptyState =
       NormalizeState
         { tableSections = Set.empty
+        , staticArrays = Set.empty
         }
 
 normalize' :: TOMLDoc -> NormalizeM Table
@@ -458,7 +460,6 @@ normalize' TOMLDoc{..} = do
           checkDuplicateSection key
           mergeTableSectionTable key tableSectionTable baseTable
         SectionTableArray key -> do
-          clearSectionsWithin key
           subTable <- flattenTable tableSectionTable
           mergeTableSectionArray key subTable baseTable
 
@@ -472,13 +473,17 @@ normalize' TOMLDoc{..} = do
 
     mergeTableSectionArray :: Key -> Table -> Table -> NormalizeM Table
     mergeTableSectionArray sectionKey table baseTable = do
+      state <- getState
       let callbacks =
             ModifyTableCallbacks
               { alterEnd = \case
                   -- if nothing exists, insert table into a new array
                   Nothing -> pure $ Just $ Array [Table table]
                   -- if an array exists, insert table to the end of the array
-                  Just (Array l) -> pure $ Just $ Array $ l <> [Table table]
+                  Just (Array l)
+                    | sectionKey `Set.notMember` staticArrays state -> do
+                        clearSectionsWithin sectionKey
+                        pure $ Just $ Array $ l <> [Table table]
                   -- otherwise, error
                   Just existingValue ->
                     normalizeError
@@ -511,8 +516,12 @@ normalize' TOMLDoc{..} = do
     -- to clear any keys with this prefix so we don't conflict with previous tables
     clearSectionsWithin sectionKey = do
       let isWithinSection key = NonEmpty.toList sectionKey `NonEmpty.isPrefixOf` key
+          clearWithin = Set.filter (not . isWithinSection)
       modifyState $ \state ->
-        state{tableSections = Set.filter (not . isWithinSection) $ tableSections state}
+        state
+          { tableSections = clearWithin $ tableSections state
+          , staticArrays = clearWithin $ staticArrays state
+          }
 
 flattenTable :: RawTable -> NormalizeM Table
 flattenTable = (`mergeInto` Map.empty)
@@ -525,7 +534,13 @@ table `mergeInto` baseTable = foldlM insertRawValue baseTable table
       let callbacks =
             ModifyTableCallbacks
               { alterEnd = \case
-                  Nothing -> pure $ Just value
+                  Nothing -> do
+                    case value of
+                      Array{} ->
+                        modifyState $ \state ->
+                          state{staticArrays = Set.insert key $ staticArrays state}
+                      _ -> return ()
+                    pure $ Just value
                   Just existingValue ->
                     normalizeError
                       DuplicateKeyError
