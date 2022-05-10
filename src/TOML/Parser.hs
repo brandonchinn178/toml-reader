@@ -16,20 +16,18 @@ module TOML.Parser (
   parseTOML,
 ) where
 
-import Control.Monad (guard, void, when)
+import Control.Monad (guard, void)
 import Control.Monad.Combinators.NonEmpty (sepBy1)
-import Data.Bifunctor (first)
+import Data.Bifunctor (bimap)
 import Data.Char (chr, isDigit, isSpace, ord)
 import Data.Fixed (Fixed (..))
 import Data.Foldable (foldl', foldlM)
 import Data.Functor (($>))
-import Data.Functor.Identity (Identity, runIdentity)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
-import Data.Set (Set)
-import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
@@ -49,9 +47,9 @@ parseTOML filename input =
     Right result -> Table <$> normalize result
 
 -- 'Value' generalized to allow for unnormalized + annotated Values.
-data GenericValue key tableMeta arrayMeta
-  = GenericTable tableMeta [(key, GenericValue key tableMeta arrayMeta)]
-  | GenericArray arrayMeta [GenericValue key tableMeta arrayMeta]
+data GenericValue map key tableMeta arrayMeta
+  = GenericTable tableMeta (map key (GenericValue map key tableMeta arrayMeta))
+  | GenericArray arrayMeta [GenericValue map key tableMeta arrayMeta]
   | GenericString Text
   | GenericInteger Integer
   | GenericFloat Double
@@ -65,9 +63,12 @@ data GenericValue key tableMeta arrayMeta
 
 type Parser = Parsec Void Text
 
+-- | An unannotated, unnormalized value.
+type RawValue = GenericValue LookupMap Key () ()
+
 type Key = NonEmpty Text
-type RawTable = [(Key, RawValue)]
-type RawValue = GenericValue Key () ()
+type RawTable = LookupMap Key RawValue
+newtype LookupMap k v = LookupMap {unLookupMap :: [(k, v)]}
 
 data TOMLDoc = TOMLDoc
   { rootTable :: RawTable
@@ -92,7 +93,7 @@ parseTOMLDocument = do
   return TOMLDoc{..}
 
 parseRawTable :: Parser RawTable
-parseRawTable = many $ parseKeyValue <* endOfLine <* emptyLines
+parseRawTable = fmap LookupMap $ many $ parseKeyValue <* endOfLine <* emptyLines
 
 parseTableSection :: Parser TableSection
 parseTableSection = do
@@ -149,7 +150,7 @@ parseInlineTable = do
   hsymbol "{"
   kvs <- parseKeyValue `sepBy` try (hsymbol ",")
   hsymbol "}"
-  return kvs
+  return $ LookupMap kvs
 
 parseInlineArray :: Parser [RawValue]
 parseInlineArray = do
@@ -407,63 +408,92 @@ parseBoolean =
 
 {--- Normalize into Value ---}
 
-data NormalizeState = NormalizeState
-  { tableSections :: Set Key
-  , staticTables :: Set Key
-  , staticArrays :: Set Key
+-- | An annotated, normalized Value
+type AnnValue = GenericValue Map Text TableMeta ArrayMeta
+
+type AnnTable = Map Text AnnValue
+
+unannotateTable :: AnnTable -> Table
+unannotateTable = fmap unannotateValue
+
+unannotateValue :: AnnValue -> Value
+unannotateValue = \case
+  GenericTable _ t -> Table $ unannotateTable t
+  GenericArray _ vs -> Array $ map unannotateValue vs
+  GenericString x -> String x
+  GenericInteger x -> Integer x
+  GenericFloat x -> Float x
+  GenericBoolean x -> Boolean x
+  GenericOffsetDateTime x -> OffsetDateTime x
+  GenericLocalDateTime x -> LocalDateTime x
+  GenericLocalDate x -> LocalDate x
+  GenericLocalTime x -> LocalTime x
+
+data TableType
+  = -- | An inline table, e.g. "a.b" in:
+    --
+    -- @
+    -- a.b = { c = 1 }
+    -- @
+    InlineTable
+  | -- | A table created implicitly from a nested key, e.g. "a" in:
+    --
+    -- @
+    -- a.b = 1
+    -- @
+    ImplicitKey
+  | -- | An explicitly named section, e.g. "a.b.c" and "a.b" but not "a" in:
+    --
+    -- @
+    -- [a.b.c]
+    -- [a.b]
+    -- @
+    ExplicitSection
+  | -- | An implicitly created section, e.g. "a" in:
+    --
+    -- @
+    -- [a.b]
+    -- @
+    --
+    -- Can later be converted into an explicit section
+    ImplicitSection
+  deriving (Eq)
+
+data TableMeta = TableMeta
+  { tableType :: TableType
   }
-  deriving (Show)
+
+newtype ArrayMeta = ArrayMeta
+  { isStaticArray :: Bool
+  }
 
 newtype NormalizeM a = NormalizeM
-  { runNormalizeM :: NormalizeState -> Either TOMLError (a, NormalizeState)
+  { runNormalizeM :: Either NormalizeError a
   }
 
 instance Functor NormalizeM where
-  fmap f m = NormalizeM $ fmap (first f) . runNormalizeM m
+  fmap f = NormalizeM . fmap f . runNormalizeM
 instance Applicative NormalizeM where
-  pure x = NormalizeM $ \s -> return (x, s)
-  NormalizeM mf <*> NormalizeM mx = NormalizeM $ \s -> do
-    (f, s') <- mf s
-    (x, s'') <- mx s'
-    return (f x, s'')
+  pure = NormalizeM . pure
+  NormalizeM f <*> NormalizeM x = NormalizeM (f <*> x)
 instance Monad NormalizeM where
-  m >>= f = NormalizeM $ \s -> do
-    (a, s') <- runNormalizeM m s
-    runNormalizeM (f a) s'
-
-getState :: NormalizeM NormalizeState
-getState = NormalizeM $ \s -> pure (s, s)
-
-modifyState :: (NormalizeState -> NormalizeState) -> NormalizeM ()
-modifyState f = NormalizeM $ \s -> pure ((), f s)
-
-setState :: NormalizeState -> NormalizeM ()
-setState = modifyState . const
+  m >>= f = NormalizeM $ runNormalizeM . f =<< runNormalizeM m
 
 normalizeError :: NormalizeError -> NormalizeM a
-normalizeError e = NormalizeM $ \_ -> Left $ NormalizeError e
+normalizeError = NormalizeM . Left
 
 normalize :: TOMLDoc -> Either TOMLError Table
-normalize = fmap fst . (`runNormalizeM` emptyState) . normalize'
-  where
-    emptyState =
-      NormalizeState
-        { tableSections = Set.empty
-        , staticTables = Set.empty
-        , staticArrays = Set.empty
-        }
+normalize = bimap NormalizeError unannotateTable . runNormalizeM . normalize'
 
-normalize' :: TOMLDoc -> NormalizeM Table
+normalize' :: TOMLDoc -> NormalizeM AnnTable
 normalize' TOMLDoc{..} = do
   root <- flattenTable rootTable
   foldlM (flip mergeTableSection) root subTables
   where
-    mergeTableSection :: TableSection -> Table -> NormalizeM Table
+    mergeTableSection :: TableSection -> AnnTable -> NormalizeM AnnTable
     mergeTableSection TableSection{..} baseTable = do
       case tableSectionHeader of
-        SectionTable key -> do
-          checkDuplicateSection key
-          checkExtendsStaticTable key
+        SectionTable key ->
           mergeTableSectionTable key tableSectionTable baseTable
         SectionTableArray key -> do
           subTable <- flattenTable tableSectionTable
@@ -471,149 +501,139 @@ normalize' TOMLDoc{..} = do
 
     mergeTableSectionTable sectionKey table baseTable = do
       -- prepend section key to all keys in section
-      let table' = map (\(k, v) -> (sectionKey <> k, v)) table
+      let table' = LookupMap . map (\(k, v) -> (sectionKey <> k, v)) . unLookupMap $ table
       -- ensure we initialize an empty table, if there's nothing in the table
-      let baseTable' = initializePath sectionKey baseTable
+      baseTable' <- initializePath sectionKey baseTable
       -- merge
       table' `mergeInto` baseTable'
 
-    mergeTableSectionArray :: Key -> Table -> Table -> NormalizeM Table
+    mergeTableSectionArray :: Key -> AnnTable -> AnnTable -> NormalizeM AnnTable
     mergeTableSectionArray sectionKey table baseTable = do
-      state <- getState
-      let callbacks =
+      let newTableMeta = TableMeta{tableType = ExplicitSection}
+          callbacks =
             ModifyTableCallbacks
               { alterEnd = \case
                   -- if nothing exists, insert table into a new array
-                  Nothing -> pure $ Just $ Array [Table table]
+                  Nothing -> do
+                    let meta = ArrayMeta{isStaticArray = False}
+                    pure $ Just $ GenericArray meta [GenericTable newTableMeta table]
                   -- if an array exists, insert table to the end of the array
-                  Just (Array l)
-                    | sectionKey `Set.notMember` staticArrays state -> do
-                        clearSectionsWithin sectionKey
-                        pure $ Just $ Array $ l <> [Table table]
+                  Just (GenericArray meta l)
+                    | not (isStaticArray meta) ->
+                        pure $ Just $ GenericArray meta $ l <> [GenericTable newTableMeta table]
                   -- otherwise, error
                   Just existingValue ->
                     normalizeError
                       ImplicitArrayForDefinedKeyError
                         { _path = NonEmpty.toList sectionKey
-                        , _existingValue = existingValue
-                        , _tableSection = table
+                        , _existingValue = unannotateValue existingValue
+                        , _tableSection = unannotateTable table
                         }
               , onMidPathValue = \history existingValue ->
                   normalizeError
                     NonTableInNestedImplicitArrayError
                       { _path = history
-                      , _existingValue = existingValue
+                      , _existingValue = unannotateValue existingValue
                       , _sectionKey = NonEmpty.toList sectionKey
-                      , _tableSection = table
+                      , _tableSection = unannotateTable table
                       }
               }
       modifyValueAtPathF callbacks sectionKey baseTable
 
-    checkDuplicateSection sectionKey = do
-      state <- getState
-      when (sectionKey `Set.member` tableSections state) $
-        normalizeError
-          DuplicateSectionError
-            { _sectionKey = NonEmpty.toList sectionKey
-            }
-      setState state{tableSections = Set.insert sectionKey $ tableSections state}
-
-    checkExtendsStaticTable sectionKey = do
-      state <- getState
-      case Set.toList $ Set.filter (`isNonEmptyPrefixOf` sectionKey) $ staticTables state of
-        [] -> pure ()
-        key : _ ->
-          normalizeError
-            ExtendTableError
-              { _path = NonEmpty.toList key
-              , _originalKey = NonEmpty.toList sectionKey
-              }
-
-    -- every time we declare a new [[a.b]] section, we're in a new table, so we need
-    -- to clear any keys with this prefix so we don't conflict with previous tables
-    clearSectionsWithin sectionKey = do
-      let clearWithin = Set.filter (not . (sectionKey `isNonEmptyPrefixOf`))
-      modifyState $ \state ->
-        state
-          { tableSections = clearWithin $ tableSections state
-          , staticArrays = clearWithin $ staticArrays state
-          }
-
-    a `isNonEmptyPrefixOf` b = NonEmpty.toList a `NonEmpty.isPrefixOf` b
-
-flattenTable :: RawTable -> NormalizeM Table
+flattenTable :: RawTable -> NormalizeM AnnTable
 flattenTable = (`mergeInto` Map.empty)
 
-mergeInto :: RawTable -> Table -> NormalizeM Table
-table `mergeInto` baseTable = foldlM insertRawValue baseTable table
+mergeInto :: RawTable -> AnnTable -> NormalizeM AnnTable
+table `mergeInto` baseTable = foldlM insertRawValue baseTable (unLookupMap table)
   where
     insertRawValue accTable (key, rawValue) = do
-      value <- toValue rawValue
+      value <- fromRawValue rawValue
       let callbacks =
             ModifyTableCallbacks
               { alterEnd = \case
-                  Nothing -> do
-                    case value of
-                      Table{} ->
-                        modifyState $ \state ->
-                          state{staticTables = Set.insert key $ staticTables state}
-                      Array{} ->
-                        modifyState $ \state ->
-                          state{staticArrays = Set.insert key $ staticArrays state}
-                      _ -> return ()
-                    pure $ Just value
+                  Nothing -> pure $ Just value
                   Just existingValue ->
                     normalizeError
                       DuplicateKeyError
                         { _path = NonEmpty.toList key
-                        , _existingValue = existingValue
-                        , _valueToSet = value
+                        , _existingValue = unannotateValue existingValue
+                        , _valueToSet = unannotateValue value
                         }
               , onMidPathValue = \history existingValue ->
                   normalizeError
                     NonTableInNestedKeyError
                       { _path = history
-                      , _existingValue = existingValue
+                      , _existingValue = unannotateValue existingValue
                       , _originalKey = NonEmpty.toList key
-                      , _originalValue = value
+                      , _originalValue = unannotateValue value
                       }
               }
       modifyValueAtPathF callbacks key accTable
 
-    toValue = \case
-      GenericTable _ rawTable -> Table <$> flattenTable rawTable
-      GenericArray _ rawValues -> Array <$> mapM toValue rawValues
-      GenericString x -> pure (String x)
-      GenericInteger x -> pure (Integer x)
-      GenericFloat x -> pure (Float x)
-      GenericBoolean x -> pure (Boolean x)
-      GenericOffsetDateTime x -> pure (OffsetDateTime x)
-      GenericLocalDateTime x -> pure (LocalDateTime x)
-      GenericLocalDate x -> pure (LocalDate x)
-      GenericLocalTime x -> pure (LocalTime x)
+    fromRawValue = \case
+      GenericTable _ rawTable -> do
+        let meta = TableMeta{tableType = InlineTable}
+        GenericTable meta <$> flattenTable rawTable
+      GenericArray _ rawValues -> do
+        let meta = ArrayMeta{isStaticArray = True}
+        GenericArray meta <$> mapM fromRawValue rawValues
+      GenericString x -> pure (GenericString x)
+      GenericInteger x -> pure (GenericInteger x)
+      GenericFloat x -> pure (GenericFloat x)
+      GenericBoolean x -> pure (GenericBoolean x)
+      GenericOffsetDateTime x -> pure (GenericOffsetDateTime x)
+      GenericLocalDateTime x -> pure (GenericLocalDateTime x)
+      GenericLocalDate x -> pure (GenericLocalDate x)
+      GenericLocalTime x -> pure (GenericLocalTime x)
 
 -- | Initialize a table at the given path.
-initializePath :: Key -> Table -> Table
-initializePath =
-  modifyValueAtPath
+initializePath :: Key -> AnnTable -> NormalizeM AnnTable
+initializePath sectionKey table =
+  modifyValueAtPathF
     ModifyTableCallbacks
-      { alterEnd =
+      { alterEnd = \case
+          Just (GenericTable meta existingTable) ->
+            case tableType meta of
+              -- error if we're redefining an inline table
+              InlineTable ->
+                normalizeError
+                  DuplicateKeyError
+                    { _path = NonEmpty.toList sectionKey
+                    , _existingValue = Table $ unannotateTable existingTable
+                    , _valueToSet = Table $ unannotateTable table
+                    }
+              -- error if we're redefining an explicit table
+              ExplicitSection ->
+                normalizeError
+                  DuplicateSectionError
+                    { _sectionKey = NonEmpty.toList sectionKey
+                    }
+              -- otherwise, mark table as explicit, e.g. in the config:
+              --   [a.b.c.d]
+              --   [a.b]
+              _ -> pure $ Just $ GenericTable meta{tableType = ExplicitSection} existingTable
           -- insert an empty Map if a value doesn't already exist
-          pure . Just . fromMaybe (Table Map.empty)
+          Nothing -> do
+            let meta = TableMeta{tableType = ExplicitSection}
+            pure $ Just $ GenericTable meta Map.empty
+          -- if some other value exists, leave it untouched, let mergeInto handle it
+          Just existingValue -> pure $ Just existingValue
       , onMidPathValue = \_ -> pure
       }
+    sectionKey
+    table
 
 type PathHistory = [Text] -- The log of keys traversed so far
-data ModifyTableCallbacks f = ModifyTableCallbacks
-  { alterEnd :: Maybe Value -> f (Maybe Value)
-  -- ^ Alter the (possibly missing) value at the end of the path.
-  , onMidPathValue :: PathHistory -> Value -> f Value
+data ModifyTableCallbacks = ModifyTableCallbacks
+  { alterEnd :: Maybe AnnValue -> NormalizeM (Maybe AnnValue)
+  -- ^ Alter the (possibly missing) Annvalue at the end of the path.
+  , onMidPathValue :: PathHistory -> AnnValue -> NormalizeM AnnValue
   -- ^ Alter a value in the middle of the path, when not recursing
   }
 
 -- | A helper for recursing through a Table.
-modifyValueAtPathF :: Functor f => ModifyTableCallbacks f -> Key -> Table -> f Table
-modifyValueAtPathF ModifyTableCallbacks{..} = go []
+modifyValueAtPathF :: ModifyTableCallbacks -> Key -> AnnTable -> NormalizeM AnnTable
+modifyValueAtPathF ModifyTableCallbacks{..} sectionKey = go [] sectionKey
   where
     go history (k NonEmpty.:| ks) table = Map.alterF (handle (history ++ [k]) ks) k table
     handle history ks mVal =
@@ -622,27 +642,33 @@ modifyValueAtPathF ModifyTableCallbacks{..} = go []
         Nothing -> alterEnd mVal
         -- when we want to keep recursing ...
         Just ks' ->
-          let go' = fmap Table . go history ks'
+          let go' meta = fmap (GenericTable meta) . go history ks'
            in fmap Just $
                 case mVal of
                   -- ... and nothing exists, recurse into a new empty Map
-                  Nothing -> go' Map.empty
-                  -- ... and Table exists, recurse into it
-                  Just (Table subTable) -> go' subTable
+                  Nothing -> go' TableMeta{tableType = ImplicitSection} Map.empty
+                  -- ... and a Table exists ...
+                  Just (GenericTable meta subTable)
+                    -- ... and the Table is an inline table, error
+                    | InlineTable <- tableType meta ->
+                        normalizeError
+                          ExtendTableError
+                            { _path = history
+                            , _originalKey = NonEmpty.toList sectionKey
+                            }
+                    -- ... otherwise recurse into it
+                    | otherwise -> go' meta subTable
                   -- ... and Array exists, recurse into the last Table, per spec:
                   --   Any reference to an array of tables points to the
                   --   most recently defined table element of the array.
-                  Just (Array vs)
+                  Just (GenericArray aMeta vs)
                     | Just vs' <- NonEmpty.nonEmpty vs
-                    , Table subTable <- NonEmpty.last vs' ->
-                        Array . snoc (NonEmpty.init vs') <$> go' subTable
+                    , GenericTable tMeta subTable <- NonEmpty.last vs' ->
+                        GenericArray aMeta . snoc (NonEmpty.init vs') <$> go' tMeta subTable
                   -- ... and something else exists, call onMidPathValue callback
                   Just v -> onMidPathValue history v
 
     snoc xs x = xs <> [x]
-
-modifyValueAtPath :: ModifyTableCallbacks Identity -> Key -> Table -> Table
-modifyValueAtPath callbacks key table = runIdentity $ modifyValueAtPathF callbacks key table
 
 {--- Parser Helpers ---}
 
