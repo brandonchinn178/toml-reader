@@ -595,28 +595,25 @@ mergeInto :: RawTable -> AnnTable -> NormalizeM AnnTable
 table `mergeInto` baseTable = foldlM insertRawValue baseTable (unLookupMap table)
   where
     insertRawValue accTable (key, rawValue) = do
-      value <- fromRawValue rawValue
-      let callbacks =
-            ModifyTableCallbacks
-              { alterEnd = \case
-                  Nothing -> pure $ Just value
-                  Just existingValue ->
-                    normalizeError
-                      DuplicateKeyError
-                        { _path = key
-                        , _existingValue = unannotateValue existingValue
-                        , _valueToSet = unannotateValue value
-                        }
-              , onMidPathValue = \history existingValue ->
-                  normalizeError
-                    NonTableInNestedKeyError
-                      { _path = history
-                      , _existingValue = unannotateValue existingValue
-                      , _originalKey = key
-                      , _originalValue = unannotateValue value
-                      }
+      let valueAtPathOptions =
+            ValueAtPathOptions
+              { midPathNotTable = \history existingValue ->
+                  NonTableInNestedKeyError
+                    { _path = history
+                    , _existingValue = unannotateValue existingValue
+                    , _originalKey = key
+                    , _originalValue = Table $ rawTableToApproxTable table
+                    }
               }
-      modifyValueAtPathF callbacks key accTable
+      withValueAtPath valueAtPathOptions key accTable $ \case
+        Nothing -> Just <$> fromRawValue rawValue
+        Just existingValue ->
+          normalizeError
+            DuplicateKeyError
+              { _path = key
+              , _existingValue = unannotateValue existingValue
+              , _valueToSet = rawValueToApproxValue rawValue
+              }
 
     fromRawValue = \case
       GenericTable _ rawTable -> do
@@ -663,7 +660,7 @@ withValueAtPath ValueAtPathOptions{..} fullKey initialTable f = go Nothing fullK
               let newTableMeta = TableMeta{tableType = ImplicitSection}
               GenericTable newTableMeta <$> go' Map.empty
             -- ... and a Table exists ...
-            Just v@(GenericTable meta subTable)
+            Just (GenericTable meta subTable)
               -- ... and the Table is an inline table, error
               | InlineTable <- tableType meta ->
                   normalizeError
@@ -694,55 +691,6 @@ rawTableToApproxTable =
 -- | Convert a RawValue into a Value, for use in errors + debugging.
 rawValueToApproxValue :: RawValue -> Value
 rawValueToApproxValue = fromGenericValue rawTableToApproxTable
-
-data ModifyTableCallbacks = ModifyTableCallbacks
-  { alterEnd :: Maybe AnnValue -> NormalizeM (Maybe AnnValue)
-  -- ^ Alter the (possibly missing) Annvalue at the end of the path.
-  , onMidPathValue :: NonEmpty Text -> AnnValue -> NormalizeM AnnValue
-  -- ^ Alter a value in the middle of the path, when not recursing
-  }
-
--- | A helper for recursing through a Table.
-modifyValueAtPathF :: ModifyTableCallbacks -> Key -> AnnTable -> NormalizeM AnnTable
-modifyValueAtPathF ModifyTableCallbacks{..} sectionKey = go Nothing sectionKey
-  where
-    go mHistory (k NonEmpty.:| ks) table = do
-      let kList = k NonEmpty.:| []
-          history = maybe kList (<> kList) mHistory
-      Map.alterF (handle history ks) k table
-    handle history ks mVal =
-      case NonEmpty.nonEmpty ks of
-        -- when we're at the last key
-        Nothing -> alterEnd mVal
-        -- when we want to keep recursing ...
-        Just ks' ->
-          let go' meta = fmap (GenericTable meta) . go (Just history) ks'
-           in fmap Just $
-                case mVal of
-                  -- ... and nothing exists, recurse into a new empty Map
-                  Nothing -> go' TableMeta{tableType = ImplicitSection} Map.empty
-                  -- ... and a Table exists ...
-                  Just (GenericTable meta subTable)
-                    -- ... and the Table is an inline table, error
-                    | InlineTable <- tableType meta ->
-                        normalizeError
-                          ExtendTableError
-                            { _path = history
-                            , _originalKey = sectionKey
-                            }
-                    -- ... otherwise recurse into it
-                    | otherwise -> go' meta subTable
-                  -- ... and Array exists, recurse into the last Table, per spec:
-                  --   Any reference to an array of tables points to the
-                  --   most recently defined table element of the array.
-                  Just (GenericArray aMeta vs)
-                    | Just vs' <- NonEmpty.nonEmpty vs
-                    , GenericTable tMeta subTable <- NonEmpty.last vs' ->
-                        GenericArray aMeta . snoc (NonEmpty.init vs') <$> go' tMeta subTable
-                  -- ... and something else exists, call onMidPathValue callback
-                  Just v -> onMidPathValue history v
-
-    snoc xs x = xs <> [x]
 
 {--- Parser Helpers ---}
 
