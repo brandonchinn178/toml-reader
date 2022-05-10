@@ -59,6 +59,22 @@ data GenericValue map key tableMeta arrayMeta
   | GenericLocalDate Day
   | GenericLocalTime TimeOfDay
 
+fromGenericValue ::
+  (map key (GenericValue map key tableMeta arrayMeta) -> Table) ->
+  GenericValue map key tableMeta arrayMeta ->
+  Value
+fromGenericValue fromGenericTable = \case
+  GenericTable _ t -> Table $ fromGenericTable t
+  GenericArray _ vs -> Array $ map (fromGenericValue fromGenericTable) vs
+  GenericString x -> String x
+  GenericInteger x -> Integer x
+  GenericFloat x -> Float x
+  GenericBoolean x -> Boolean x
+  GenericOffsetDateTime x -> OffsetDateTime x
+  GenericLocalDateTime x -> LocalDateTime x
+  GenericLocalDate x -> LocalDate x
+  GenericLocalTime x -> LocalTime x
+
 {--- Parse raw document ---}
 
 type Parser = Parsec Void Text
@@ -417,17 +433,7 @@ unannotateTable :: AnnTable -> Table
 unannotateTable = fmap unannotateValue
 
 unannotateValue :: AnnValue -> Value
-unannotateValue = \case
-  GenericTable _ t -> Table $ unannotateTable t
-  GenericArray _ vs -> Array $ map unannotateValue vs
-  GenericString x -> String x
-  GenericInteger x -> Integer x
-  GenericFloat x -> Float x
-  GenericBoolean x -> Boolean x
-  GenericOffsetDateTime x -> OffsetDateTime x
-  GenericLocalDateTime x -> LocalDateTime x
-  GenericLocalDate x -> LocalDate x
-  GenericLocalTime x -> LocalTime x
+unannotateValue = fromGenericValue unannotateTable
 
 data TableType
   = -- | An inline table, e.g. "a.b" in:
@@ -463,7 +469,7 @@ data TableMeta = TableMeta
   { tableType :: TableType
   }
 
-newtype ArrayMeta = ArrayMeta
+data ArrayMeta = ArrayMeta
   { isStaticArray :: Bool
   }
 
@@ -488,24 +494,16 @@ normalize = bimap NormalizeError unannotateTable . runNormalizeM . normalize'
 normalize' :: TOMLDoc -> NormalizeM AnnTable
 normalize' TOMLDoc{..} = do
   root <- flattenTable rootTable
-  foldlM (flip mergeTableSection) root subTables
+  foldlM mergeTableSection root subTables
   where
-    mergeTableSection :: TableSection -> AnnTable -> NormalizeM AnnTable
-    mergeTableSection TableSection{..} baseTable = do
+    mergeTableSection :: AnnTable -> TableSection -> NormalizeM AnnTable
+    mergeTableSection baseTable TableSection{..} = do
       case tableSectionHeader of
         SectionTable key ->
           mergeTableSectionTable key tableSectionTable baseTable
         SectionTableArray key -> do
           subTable <- flattenTable tableSectionTable
           mergeTableSectionArray key subTable baseTable
-
-    mergeTableSectionTable sectionKey table baseTable = do
-      -- prepend section key to all keys in section
-      let table' = LookupMap . map (\(k, v) -> (sectionKey <> k, v)) . unLookupMap $ table
-      -- ensure we initialize an empty table, if there's nothing in the table
-      baseTable' <- initializePath sectionKey baseTable
-      -- merge
-      table' `mergeInto` baseTable'
 
     mergeTableSectionArray :: Key -> AnnTable -> AnnTable -> NormalizeM AnnTable
     mergeTableSectionArray sectionKey table baseTable = do
@@ -539,6 +537,53 @@ normalize' TOMLDoc{..} = do
                       }
               }
       modifyValueAtPathF callbacks sectionKey baseTable
+
+mergeTableSectionTable :: Key -> RawTable -> AnnTable -> NormalizeM AnnTable
+mergeTableSectionTable sectionKey table baseTable =
+  withValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
+    tableToExtend <-
+      case mVal of
+        -- if a value doesn't already exist, initialize an empty Map
+        Nothing -> pure Map.empty
+        -- if a Table already exists at the path ...
+        Just existingValue@(GenericTable meta existingTable) ->
+          case tableType meta of
+            -- ... and is an inline table, error
+            InlineTable -> duplicateKeyError existingValue
+            -- ... and was created as a Table section explicitly defined elsewhere, error
+            ExplicitSection -> duplicateSectionError
+            -- ... otherwise, return the existing table
+            _ -> pure existingTable
+        -- if some other Value already exists at the path, error
+        Just existingValue -> duplicateKeyError existingValue
+
+    mergedTable <- table `mergeInto` tableToExtend
+
+    let newTableMeta = TableMeta{tableType = ExplicitSection}
+    pure $ Just $ GenericTable newTableMeta mergedTable
+  where
+    valueAtPathOptions =
+      ValueAtPathOptions
+        { makeMidPathNotTableError = \history existingValue ->
+            NonTableInNestedKeyError
+              { _path = history
+              , _existingValue = unannotateValue existingValue
+              , _originalKey = NonEmpty.toList sectionKey
+              , _originalValue = Table $ rawTableToApproxTable table
+              }
+        }
+    duplicateKeyError existingValue =
+      normalizeError
+        DuplicateKeyError
+          { _path = NonEmpty.toList sectionKey
+          , _existingValue = unannotateValue existingValue
+          , _valueToSet = Table $ rawTableToApproxTable table
+          }
+    duplicateSectionError =
+      normalizeError
+        DuplicateSectionError
+          { _sectionKey = NonEmpty.toList sectionKey
+          }
 
 flattenTable :: RawTable -> NormalizeM AnnTable
 flattenTable = (`mergeInto` Map.empty)
@@ -586,42 +631,63 @@ table `mergeInto` baseTable = foldlM insertRawValue baseTable (unLookupMap table
       GenericLocalDate x -> pure (GenericLocalDate x)
       GenericLocalTime x -> pure (GenericLocalTime x)
 
--- | Initialize a table at the given path.
-initializePath :: Key -> AnnTable -> NormalizeM AnnTable
-initializePath sectionKey table =
-  modifyValueAtPathF
-    ModifyTableCallbacks
-      { alterEnd = \case
-          Just (GenericTable meta existingTable) ->
-            case tableType meta of
-              -- error if we're redefining an inline table
-              InlineTable ->
-                normalizeError
-                  DuplicateKeyError
-                    { _path = NonEmpty.toList sectionKey
-                    , _existingValue = Table $ unannotateTable existingTable
-                    , _valueToSet = Table $ unannotateTable table
-                    }
-              -- error if we're redefining an explicit table
-              ExplicitSection ->
-                normalizeError
-                  DuplicateSectionError
-                    { _sectionKey = NonEmpty.toList sectionKey
-                    }
-              -- otherwise, mark table as explicit, e.g. in the config:
-              --   [a.b.c.d]
-              --   [a.b]
-              _ -> pure $ Just $ GenericTable meta{tableType = ExplicitSection} existingTable
-          -- insert an empty Map if a value doesn't already exist
-          Nothing -> do
-            let meta = TableMeta{tableType = ExplicitSection}
-            pure $ Just $ GenericTable meta Map.empty
-          -- if some other value exists, leave it untouched, let mergeInto handle it
-          Just existingValue -> pure $ Just existingValue
-      , onMidPathValue = \_ -> pure
-      }
-    sectionKey
-    table
+data ValueAtPathOptions = ValueAtPathOptions
+  { makeMidPathNotTableError :: [Text] -> AnnValue -> NormalizeError
+  }
+
+withValueAtPath ::
+  ValueAtPathOptions ->
+  Key ->
+  AnnTable ->
+  (Maybe AnnValue -> NormalizeM (Maybe AnnValue)) ->
+  NormalizeM AnnTable
+withValueAtPath ValueAtPathOptions{..} fullKey initialTable f = go [] fullKey initialTable
+  where
+    go history (k NonEmpty.:| ks) table = Map.alterF (handle (history ++ [k]) ks) k table
+    handle history ks mVal =
+      case NonEmpty.nonEmpty ks of
+        -- when we're at the last key
+        Nothing -> f mVal
+        -- when we want to keep recursing ...
+        Just ks' -> fmap Just $ do
+          let go' = go history ks'
+          case mVal of
+            -- ... and nothing exists, recurse into a new empty Map
+            Nothing -> do
+              let newTableMeta = TableMeta{tableType = ImplicitSection}
+              GenericTable newTableMeta <$> go' Map.empty
+            -- ... and a Table exists ...
+            Just v@(GenericTable meta subTable)
+              -- ... and the Table is an inline table, error
+              | InlineTable <- tableType meta ->
+                  normalizeError
+                    ExtendTableError
+                      { _path = history
+                      , _originalKey = NonEmpty.toList fullKey
+                      }
+              -- ... otherwise recurse into it
+              | otherwise -> GenericTable meta <$> go' subTable
+            -- ... and Array exists, recurse into the last Table, per spec:
+            --   Any reference to an array of tables points to the
+            --   most recently defined table element of the array.
+            Just (GenericArray aMeta vs)
+              | Just vs' <- NonEmpty.nonEmpty vs
+              , GenericTable tMeta subTable <- NonEmpty.last vs' ->
+                  GenericArray aMeta . snoc (NonEmpty.init vs') . GenericTable tMeta <$> go' subTable
+            -- ... and something else exists, throw error with makeMidPathNotTableError
+            Just v -> normalizeError $ makeMidPathNotTableError history v
+    snoc xs x = xs <> [x]
+
+-- | Convert a RawTable into a Table, for use in errors + debugging.
+rawTableToApproxTable :: RawTable -> Table
+rawTableToApproxTable =
+  Map.fromList
+    . map (\(k, v) -> (Text.intercalate "." $ NonEmpty.toList k, rawValueToApproxValue v))
+    . unLookupMap
+
+-- | Convert a RawValue into a Value, for use in errors + debugging.
+rawValueToApproxValue :: RawValue -> Value
+rawValueToApproxValue = fromGenericValue rawTableToApproxTable
 
 type PathHistory = [Text] -- The log of keys traversed so far
 data ModifyTableCallbacks = ModifyTableCallbacks
