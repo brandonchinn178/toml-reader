@@ -14,6 +14,8 @@ module TOML.Internal (
 ) where
 
 import Control.DeepSeq (NFData)
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
@@ -68,7 +70,7 @@ data NormalizeError
     -- name = 'Second'
     -- @
     DuplicateKeyError
-      { _path :: [Text]
+      { _path :: NonEmpty Text
       , _existingValue :: Value
       , _valueToSet :: Value
       }
@@ -82,7 +84,7 @@ data NormalizeError
     -- b = 2
     -- @
     DuplicateSectionError
-      { _sectionKey :: [Text]
+      { _sectionKey :: NonEmpty Text
       }
   | -- | When a section attempts to extend an inline table
     --
@@ -91,8 +93,8 @@ data NormalizeError
     -- [a.b]
     -- @
     ExtendTableError
-      { _path :: [Text]
-      , _originalKey :: [Text]
+      { _path :: NonEmpty Text
+      , _originalKey :: NonEmpty Text
       }
   | -- | When a key is already defined, but attempting to create an
     -- implicit array at the same key, e.g.
@@ -104,7 +106,7 @@ data NormalizeError
     -- a = 1
     -- @
     ImplicitArrayForDefinedKeyError
-      { _path :: [Text]
+      { _path :: NonEmpty Text
       , _existingValue :: Value
       , _tableSection :: Table
       }
@@ -115,9 +117,9 @@ data NormalizeError
     -- a.b.c.d = 2
     -- @
     NonTableInNestedKeyError
-      { _path :: [Text]
+      { _path :: NonEmpty Text
       , _existingValue :: Value
-      , _originalKey :: [Text]
+      , _originalKey :: NonEmpty Text
       , _originalValue :: Value
       }
   | -- | When a non-table value is already defined in a nested implicit array, e.g.
@@ -129,9 +131,9 @@ data NormalizeError
     -- d = 2
     -- @
     NonTableInNestedImplicitArrayError
-      { _path :: [Text]
+      { _path :: NonEmpty Text
       , _existingValue :: Value
-      , _sectionKey :: [Text]
+      , _sectionKey :: NonEmpty Text
       , _tableSection :: Table
       }
   deriving (Show)
@@ -170,4 +172,4 @@ renderTOMLError = \case
       , "  Array table section: " <> renderValue (Table _tableSection)
       ]
   where
-    showPath path = "\"" <> Text.intercalate "." path <> "\""
+    showPath path = "\"" <> Text.intercalate "." (NonEmpty.toList path) <> "\""

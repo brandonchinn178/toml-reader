@@ -534,21 +534,21 @@ mergeTableSectionTable sectionKey table baseTable =
             NonTableInNestedKeyError
               { _path = history
               , _existingValue = unannotateValue existingValue
-              , _originalKey = NonEmpty.toList sectionKey
+              , _originalKey = sectionKey
               , _originalValue = Table $ rawTableToApproxTable table
               }
         }
     duplicateKeyError existingValue =
       normalizeError
         DuplicateKeyError
-          { _path = NonEmpty.toList sectionKey
+          { _path = sectionKey
           , _existingValue = unannotateValue existingValue
           , _valueToSet = Table $ rawTableToApproxTable table
           }
     duplicateSectionError =
       normalizeError
         DuplicateSectionError
-          { _sectionKey = NonEmpty.toList sectionKey
+          { _sectionKey = sectionKey
           }
 
 mergeTableSectionArray :: Key -> RawTable -> AnnTable -> NormalizeM AnnTable
@@ -568,7 +568,7 @@ mergeTableSectionArray sectionKey table baseTable = do
         Just existingValue ->
           normalizeError
             ImplicitArrayForDefinedKeyError
-              { _path = NonEmpty.toList sectionKey
+              { _path = sectionKey
               , _existingValue = unannotateValue existingValue
               , _tableSection = rawTableToApproxTable table
               }
@@ -583,7 +583,7 @@ mergeTableSectionArray sectionKey table baseTable = do
             NonTableInNestedImplicitArrayError
               { _path = history
               , _existingValue = unannotateValue existingValue
-              , _sectionKey = NonEmpty.toList sectionKey
+              , _sectionKey = sectionKey
               , _tableSection = rawTableToApproxTable table
               }
         }
@@ -603,7 +603,7 @@ table `mergeInto` baseTable = foldlM insertRawValue baseTable (unLookupMap table
                   Just existingValue ->
                     normalizeError
                       DuplicateKeyError
-                        { _path = NonEmpty.toList key
+                        { _path = key
                         , _existingValue = unannotateValue existingValue
                         , _valueToSet = unannotateValue value
                         }
@@ -612,7 +612,7 @@ table `mergeInto` baseTable = foldlM insertRawValue baseTable (unLookupMap table
                     NonTableInNestedKeyError
                       { _path = history
                       , _existingValue = unannotateValue existingValue
-                      , _originalKey = NonEmpty.toList key
+                      , _originalKey = key
                       , _originalValue = unannotateValue value
                       }
               }
@@ -635,7 +635,7 @@ table `mergeInto` baseTable = foldlM insertRawValue baseTable (unLookupMap table
       GenericLocalTime x -> pure (GenericLocalTime x)
 
 data ValueAtPathOptions = ValueAtPathOptions
-  { makeMidPathNotTableError :: [Text] -> AnnValue -> NormalizeError
+  { makeMidPathNotTableError :: Key -> AnnValue -> NormalizeError
   }
 
 withValueAtPath ::
@@ -644,16 +644,19 @@ withValueAtPath ::
   AnnTable ->
   (Maybe AnnValue -> NormalizeM (Maybe AnnValue)) ->
   NormalizeM AnnTable
-withValueAtPath ValueAtPathOptions{..} fullKey initialTable f = go [] fullKey initialTable
+withValueAtPath ValueAtPathOptions{..} fullKey initialTable f = go Nothing fullKey initialTable
   where
-    go history (k NonEmpty.:| ks) table = Map.alterF (handle (history ++ [k]) ks) k table
+    go mHistory (k NonEmpty.:| ks) table = do
+      let kList = k NonEmpty.:| []
+          history = maybe kList (<> kList) mHistory
+      Map.alterF (handle history ks) k table
     handle history ks mVal =
       case NonEmpty.nonEmpty ks of
         -- when we're at the last key
         Nothing -> f mVal
         -- when we want to keep recursing ...
         Just ks' -> fmap Just $ do
-          let go' = go history ks'
+          let go' = go (Just history) ks'
           case mVal of
             -- ... and nothing exists, recurse into a new empty Map
             Nothing -> do
@@ -666,7 +669,7 @@ withValueAtPath ValueAtPathOptions{..} fullKey initialTable f = go [] fullKey in
                   normalizeError
                     ExtendTableError
                       { _path = history
-                      , _originalKey = NonEmpty.toList fullKey
+                      , _originalKey = fullKey
                       }
               -- ... otherwise recurse into it
               | otherwise -> GenericTable meta <$> go' subTable
@@ -692,26 +695,28 @@ rawTableToApproxTable =
 rawValueToApproxValue :: RawValue -> Value
 rawValueToApproxValue = fromGenericValue rawTableToApproxTable
 
-type PathHistory = [Text] -- The log of keys traversed so far
 data ModifyTableCallbacks = ModifyTableCallbacks
   { alterEnd :: Maybe AnnValue -> NormalizeM (Maybe AnnValue)
   -- ^ Alter the (possibly missing) Annvalue at the end of the path.
-  , onMidPathValue :: PathHistory -> AnnValue -> NormalizeM AnnValue
+  , onMidPathValue :: NonEmpty Text -> AnnValue -> NormalizeM AnnValue
   -- ^ Alter a value in the middle of the path, when not recursing
   }
 
 -- | A helper for recursing through a Table.
 modifyValueAtPathF :: ModifyTableCallbacks -> Key -> AnnTable -> NormalizeM AnnTable
-modifyValueAtPathF ModifyTableCallbacks{..} sectionKey = go [] sectionKey
+modifyValueAtPathF ModifyTableCallbacks{..} sectionKey = go Nothing sectionKey
   where
-    go history (k NonEmpty.:| ks) table = Map.alterF (handle (history ++ [k]) ks) k table
+    go mHistory (k NonEmpty.:| ks) table = do
+      let kList = k NonEmpty.:| []
+          history = maybe kList (<> kList) mHistory
+      Map.alterF (handle history ks) k table
     handle history ks mVal =
       case NonEmpty.nonEmpty ks of
         -- when we're at the last key
         Nothing -> alterEnd mVal
         -- when we want to keep recursing ...
         Just ks' ->
-          let go' meta = fmap (GenericTable meta) . go history ks'
+          let go' meta = fmap (GenericTable meta) . go (Just history) ks'
            in fmap Just $
                 case mVal of
                   -- ... and nothing exists, recurse into a new empty Map
@@ -723,7 +728,7 @@ modifyValueAtPathF ModifyTableCallbacks{..} sectionKey = go [] sectionKey
                         normalizeError
                           ExtendTableError
                             { _path = history
-                            , _originalKey = NonEmpty.toList sectionKey
+                            , _originalKey = sectionKey
                             }
                     -- ... otherwise recurse into it
                     | otherwise -> go' meta subTable
