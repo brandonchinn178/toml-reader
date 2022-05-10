@@ -501,42 +501,8 @@ normalize' TOMLDoc{..} = do
       case tableSectionHeader of
         SectionTable key ->
           mergeTableSectionTable key tableSectionTable baseTable
-        SectionTableArray key -> do
-          subTable <- flattenTable tableSectionTable
-          mergeTableSectionArray key subTable baseTable
-
-    mergeTableSectionArray :: Key -> AnnTable -> AnnTable -> NormalizeM AnnTable
-    mergeTableSectionArray sectionKey table baseTable = do
-      let newTableMeta = TableMeta{tableType = ExplicitSection}
-          callbacks =
-            ModifyTableCallbacks
-              { alterEnd = \case
-                  -- if nothing exists, insert table into a new array
-                  Nothing -> do
-                    let meta = ArrayMeta{isStaticArray = False}
-                    pure $ Just $ GenericArray meta [GenericTable newTableMeta table]
-                  -- if an array exists, insert table to the end of the array
-                  Just (GenericArray meta l)
-                    | not (isStaticArray meta) ->
-                        pure $ Just $ GenericArray meta $ l <> [GenericTable newTableMeta table]
-                  -- otherwise, error
-                  Just existingValue ->
-                    normalizeError
-                      ImplicitArrayForDefinedKeyError
-                        { _path = NonEmpty.toList sectionKey
-                        , _existingValue = unannotateValue existingValue
-                        , _tableSection = unannotateTable table
-                        }
-              , onMidPathValue = \history existingValue ->
-                  normalizeError
-                    NonTableInNestedImplicitArrayError
-                      { _path = history
-                      , _existingValue = unannotateValue existingValue
-                      , _sectionKey = NonEmpty.toList sectionKey
-                      , _tableSection = unannotateTable table
-                      }
-              }
-      modifyValueAtPathF callbacks sectionKey baseTable
+        SectionTableArray key ->
+          mergeTableSectionArray key tableSectionTable baseTable
 
 mergeTableSectionTable :: Key -> RawTable -> AnnTable -> NormalizeM AnnTable
 mergeTableSectionTable sectionKey table baseTable =
@@ -584,6 +550,43 @@ mergeTableSectionTable sectionKey table baseTable =
         DuplicateSectionError
           { _sectionKey = NonEmpty.toList sectionKey
           }
+
+mergeTableSectionArray :: Key -> RawTable -> AnnTable -> NormalizeM AnnTable
+mergeTableSectionArray sectionKey table baseTable = do
+  withValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
+    (meta, currArray) <-
+      case mVal of
+        -- if nothing exists, initialize an empty array
+        Nothing -> do
+          let meta = ArrayMeta{isStaticArray = False}
+          pure (meta, [])
+        -- if an array exists, insert table to the end of the array
+        Just (GenericArray meta existingArray)
+          | not (isStaticArray meta) ->
+              pure (meta, existingArray)
+        -- otherwise, error
+        Just existingValue ->
+          normalizeError
+            ImplicitArrayForDefinedKeyError
+              { _path = NonEmpty.toList sectionKey
+              , _existingValue = unannotateValue existingValue
+              , _tableSection = rawTableToApproxTable table
+              }
+
+    let newTableMeta = TableMeta{tableType = ExplicitSection}
+    newTable <- GenericTable newTableMeta <$> flattenTable table
+    pure $ Just $ GenericArray meta $ currArray <> [newTable]
+  where
+    valueAtPathOptions =
+      ValueAtPathOptions
+        { makeMidPathNotTableError = \history existingValue ->
+            NonTableInNestedImplicitArrayError
+              { _path = history
+              , _existingValue = unannotateValue existingValue
+              , _sectionKey = NonEmpty.toList sectionKey
+              , _tableSection = rawTableToApproxTable table
+              }
+        }
 
 flattenTable :: RawTable -> NormalizeM AnnTable
 flattenTable = (`mergeInto` Map.empty)
