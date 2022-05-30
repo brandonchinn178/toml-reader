@@ -43,13 +43,7 @@ jobs:
       - name: Test
         run: stack test :toml-reader-tests --coverage
       - name: Test validator
-        run: |
-          stack test :parser-validator --coverage --ta '
-            -skip invalid/table/append-with-dotted-keys-1
-            -skip invalid/table/append-with-dotted-keys-2
-            -skip invalid/table/duplicate-key-dotted-table
-            -skip invalid/table/duplicate-key-dotted-table2
-          '
+        run: stack test :parser-validator --coverage
 
       - name: Check that Cabal file was generated
         run: git diff --exit-code '*.cabal'

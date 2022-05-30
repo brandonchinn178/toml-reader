@@ -16,7 +16,7 @@ module TOML.Parser (
   parseTOML,
 ) where
 
-import Control.Monad (guard, void)
+import Control.Monad (guard, unless, void)
 import Control.Monad.Combinators.NonEmpty (sepBy1)
 import Data.Bifunctor (bimap)
 import Data.Char (chr, isDigit, isSpace, ord)
@@ -516,6 +516,8 @@ mergeTableSectionTable sectionKey table baseTable =
           case tableType meta of
             -- ... and is an inline table, error
             InlineTable -> duplicateKeyError existingValue
+            -- ... and was created as a nested key elsewhere, error
+            ImplicitKey -> extendTableError
             -- ... and was created as a Table section explicitly defined elsewhere, error
             ExplicitSection -> duplicateSectionError
             -- ... otherwise, return the existing table
@@ -523,20 +525,24 @@ mergeTableSectionTable sectionKey table baseTable =
         -- if some other Value already exists at the path, error
         Just existingValue -> duplicateKeyError existingValue
 
-    mergedTable <- table `mergeInto` tableToExtend
+    mergedTable <-
+      mergeRawTable
+        MergeOptions{recurseImplicitSections = False}
+        tableToExtend
+        table
 
     let newTableMeta = TableMeta{tableType = ExplicitSection}
     pure $ Just $ GenericTable newTableMeta mergedTable
   where
     valueAtPathOptions =
       ValueAtPathOptions
-        { makeMidPathNotTableError = \history existingValue ->
-            NonTableInNestedKeyError
-              { _path = history
-              , _existingValue = unannotateValue existingValue
-              , _originalKey = sectionKey
-              , _originalValue = Table $ rawTableToApproxTable table
-              }
+        { shouldRecurse = \case
+            InlineTable -> False
+            ImplicitKey -> False
+            ExplicitSection -> True
+            ImplicitSection -> True
+        , implicitType = ImplicitSection
+        , makeMidPathNotTableError = nonTableInNestedKeyError sectionKey table
         }
     duplicateKeyError existingValue =
       normalizeError
@@ -544,6 +550,12 @@ mergeTableSectionTable sectionKey table baseTable =
           { _path = sectionKey
           , _existingValue = unannotateValue existingValue
           , _valueToSet = Table $ rawTableToApproxTable table
+          }
+    extendTableError =
+      normalizeError
+        ExtendTableError
+          { _path = sectionKey
+          , _originalKey = sectionKey
           }
     duplicateSectionError =
       normalizeError
@@ -579,7 +591,13 @@ mergeTableSectionArray sectionKey table baseTable = do
   where
     valueAtPathOptions =
       ValueAtPathOptions
-        { makeMidPathNotTableError = \history existingValue ->
+        { shouldRecurse = \case
+            InlineTable -> False
+            ImplicitKey -> False
+            ExplicitSection -> True
+            ImplicitSection -> True
+        , implicitType = ImplicitSection
+        , makeMidPathNotTableError = \history existingValue ->
             NonTableInNestedImplicitArrayError
               { _path = history
               , _existingValue = unannotateValue existingValue
@@ -589,21 +607,28 @@ mergeTableSectionArray sectionKey table baseTable = do
         }
 
 flattenTable :: RawTable -> NormalizeM AnnTable
-flattenTable = (`mergeInto` Map.empty)
+flattenTable =
+  mergeRawTable
+    MergeOptions{recurseImplicitSections = True}
+    Map.empty
 
-mergeInto :: RawTable -> AnnTable -> NormalizeM AnnTable
-table `mergeInto` baseTable = foldlM insertRawValue baseTable (unLookupMap table)
+data MergeOptions = MergeOptions
+  { recurseImplicitSections :: Bool
+  }
+
+mergeRawTable :: MergeOptions -> AnnTable -> RawTable -> NormalizeM AnnTable
+mergeRawTable MergeOptions{..} baseTable table = foldlM insertRawValue baseTable (unLookupMap table)
   where
     insertRawValue accTable (key, rawValue) = do
       let valueAtPathOptions =
             ValueAtPathOptions
-              { midPathNotTable = \history existingValue ->
-                  NonTableInNestedKeyError
-                    { _path = history
-                    , _existingValue = unannotateValue existingValue
-                    , _originalKey = key
-                    , _originalValue = Table $ rawTableToApproxTable table
-                    }
+              { shouldRecurse = \case
+                  InlineTable -> False
+                  ImplicitKey -> True
+                  ExplicitSection -> True
+                  ImplicitSection -> recurseImplicitSections
+              , implicitType = ImplicitKey
+              , makeMidPathNotTableError = nonTableInNestedKeyError key table
               }
       withValueAtPath valueAtPathOptions key accTable $ \case
         Nothing -> Just <$> fromRawValue rawValue
@@ -632,8 +657,20 @@ table `mergeInto` baseTable = foldlM insertRawValue baseTable (unLookupMap table
       GenericLocalTime x -> pure (GenericLocalTime x)
 
 data ValueAtPathOptions = ValueAtPathOptions
-  { makeMidPathNotTableError :: Key -> AnnValue -> NormalizeError
+  { shouldRecurse :: TableType -> Bool
+  , implicitType :: TableType
+  , makeMidPathNotTableError :: Key -> AnnValue -> NormalizeError
   }
+
+-- | Implementation for makeMidPathNotTableError for NonTableInNestedKeyError
+nonTableInNestedKeyError :: Key -> RawTable -> (Key -> AnnValue -> NormalizeError)
+nonTableInNestedKeyError key table = \history existingValue ->
+  NonTableInNestedKeyError
+    { _path = history
+    , _existingValue = unannotateValue existingValue
+    , _originalKey = key
+    , _originalValue = Table $ rawTableToApproxTable table
+    }
 
 withValueAtPath ::
   ValueAtPathOptions ->
@@ -657,19 +694,17 @@ withValueAtPath ValueAtPathOptions{..} fullKey initialTable f = go Nothing fullK
           case mVal of
             -- ... and nothing exists, recurse into a new empty Map
             Nothing -> do
-              let newTableMeta = TableMeta{tableType = ImplicitSection}
+              let newTableMeta = TableMeta{tableType = implicitType}
               GenericTable newTableMeta <$> go' Map.empty
-            -- ... and a Table exists ...
-            Just (GenericTable meta subTable)
-              -- ... and the Table is an inline table, error
-              | InlineTable <- tableType meta ->
-                  normalizeError
-                    ExtendTableError
-                      { _path = history
-                      , _originalKey = fullKey
-                      }
-              -- ... otherwise recurse into it
-              | otherwise -> GenericTable meta <$> go' subTable
+            -- ... and a Table exists, recurse into it
+            Just (GenericTable meta subTable) -> do
+              unless (shouldRecurse $ tableType meta) $
+                normalizeError
+                  ExtendTableError
+                    { _path = history
+                    , _originalKey = fullKey
+                    }
+              GenericTable meta <$> go' subTable
             -- ... and Array exists, recurse into the last Table, per spec:
             --   Any reference to an array of tables points to the
             --   most recently defined table element of the array.

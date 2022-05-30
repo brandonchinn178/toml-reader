@@ -86,14 +86,17 @@ data NormalizeError
     DuplicateSectionError
       { _sectionKey :: NonEmpty Text
       }
-  | -- | When a key attempts to extend an inline table
+  | -- | When a key attempts to extend an invalid table
     --
     -- @
     -- a = {}
     -- [a.b]
     --
-    -- z = {}
-    -- z.a = 1
+    -- b = {}
+    -- b.a = 1
+    --
+    -- c.x.x = 1
+    -- [c.a]
     -- @
     ExtendTableError
       { _path :: NonEmpty Text
