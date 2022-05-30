@@ -682,28 +682,28 @@ setValueAtPath ValueAtPathOptions{..} fullKey initialTable f = do
   setValue <$> f mValue
   where
     doRecurse history = \case
-            -- If nothing exists, recurse into a new empty Map
-            Nothing -> do
-              let newTableMeta = TableMeta{tableType = implicitType}
-              pure (Map.empty, GenericTable newTableMeta)
-            -- If a Table exists, recurse into it
-            Just (GenericTable meta subTable) -> do
-              unless (shouldRecurse $ tableType meta) $
-                normalizeError
-                  ExtendTableError
-                    { _path = history
-                    , _originalKey = fullKey
-                    }
-              pure (subTable, GenericTable meta)
-            -- If an Array exists, recurse into the last Table, per spec:
-            --   Any reference to an array of tables points to the
-            --   most recently defined table element of the array.
-            Just (GenericArray aMeta vs)
-              | Just vs' <- NonEmpty.nonEmpty vs
-              , GenericTable tMeta subTable <- NonEmpty.last vs' ->
-                  pure (subTable, GenericArray aMeta . snoc (NonEmpty.init vs') . GenericTable tMeta)
-            -- If something else exists, throw error with makeMidPathNotTableError
-            Just v -> normalizeError $ makeMidPathNotTableError history v
+      -- If nothing exists, recurse into a new empty Map
+      Nothing -> do
+        let newTableMeta = TableMeta{tableType = implicitType}
+        pure (Map.empty, GenericTable newTableMeta)
+      -- If a Table exists, recurse into it
+      Just (GenericTable meta subTable) -> do
+        unless (shouldRecurse $ tableType meta) $
+          normalizeError
+            ExtendTableError
+              { _path = history
+              , _originalKey = fullKey
+              }
+        pure (subTable, GenericTable meta)
+      -- If an Array exists, recurse into the last Table, per spec:
+      --   Any reference to an array of tables points to the
+      --   most recently defined table element of the array.
+      Just (GenericArray aMeta vs)
+        | Just vs' <- NonEmpty.nonEmpty vs
+        , GenericTable tMeta subTable <- NonEmpty.last vs' ->
+            pure (subTable, GenericArray aMeta . snoc (NonEmpty.init vs') . GenericTable tMeta)
+      -- If something else exists, throw error with makeMidPathNotTableError
+      Just v -> normalizeError $ makeMidPathNotTableError history v
 
     snoc xs x = xs <> [x]
 
