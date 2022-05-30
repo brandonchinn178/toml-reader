@@ -9,13 +9,14 @@ import qualified Data.Map.Strict as Map
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
 
-import TOML.Utils.Map (getPathLens)
+import TOML.Utils.Map (getPath, getPathLens)
 
 test :: TestTree
 test =
   testGroup
     "TOML.Utils.Map"
     [ getPathLensTest
+    , getPathTest
     ]
 
 data MapOrInt = Map [(String, MapOrInt)] | Int Int
@@ -36,7 +37,7 @@ getPathLensTest :: TestTree
 getPathLensTest =
   testGroup
     "getPathLens"
-    [ testCase "should get and set value at path" $ do
+    [ testCase "gets and sets value at path" $ do
         let obj = Map.fromList [("a", Map [("b", Map [("c", Int 1)])])]
 
         Right (mValue, setValue) <- pure $ getPathLens recurseMapOrInt (NonEmpty.fromList ["a", "b", "c"]) obj
@@ -45,4 +46,17 @@ getPathLensTest =
 
         let newVal = Map [("foo", Int 100)]
         setValue newVal @?= Map.fromList [("a", Map [("b", Map [("c", newVal)])])]
+    ]
+
+getPathTest :: TestTree
+getPathTest =
+  testGroup
+    "getPath"
+    [ testCase "gets value at path" $ do
+        let obj = Map.fromList [("a", Map [("b", Map [("c", Int 1)])])]
+
+        let doRecurse history = fmap fst . recurseMapOrInt history
+        Right mValue <- pure $ getPath doRecurse (NonEmpty.fromList ["a", "b", "c"]) obj
+
+        mValue @?= Just (Int 1)
     ]

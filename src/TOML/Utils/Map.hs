@@ -2,6 +2,7 @@
 
 module TOML.Utils.Map (
   getPathLens,
+  getPath,
 ) where
 
 import Data.Foldable (foldlM)
@@ -32,12 +33,39 @@ getPathLens ::
   NonEmpty k ->
   Map k v ->
   m (Maybe v, v -> Map k v)
-getPathLens doRecurse path originalMap =
-  let (_, k) :| ks = zipHistory path
-   in foldlM go (buildLens k id originalMap) ks
+getPathLens =
+  getPathLensWith (\setVal fromMap -> mkSetter (setVal . fromMap)) (mkSetter id)
   where
-    go (mVal, setVal) (history, k) = do
-      (nextMap, fromMap) <- doRecurse history mVal
-      pure $ buildLens k (setVal . fromMap) nextMap
+    mkSetter setMap k kvs = \v -> setMap $ Map.insert k v kvs
 
-    buildLens k setMap kvs = (Map.lookup k kvs, \v -> setMap $ Map.insert k v kvs)
+-- | Same as 'getPathLens', except without the setter.
+getPath ::
+  (Monad m, Ord k) =>
+  (NonEmpty k -> Maybe v -> m (Map k v)) ->
+  NonEmpty k ->
+  Map k v ->
+  m (Maybe v)
+getPath doRecurse path originalMap =
+  fst <$> getPathLensWith (\_ _ _ _ -> ()) (\_ _ -> ()) doRecurse' path originalMap
+  where
+    doRecurse' history mVal = do
+      x <- doRecurse history mVal
+      pure (x, ())
+
+getPathLensWith ::
+  (Monad m, Ord k) =>
+  (b -> a -> (k -> Map k v -> b)) ->
+  (k -> Map k v -> b) ->
+  (NonEmpty k -> Maybe v -> m (Map k v, a)) ->
+  NonEmpty k ->
+  Map k v ->
+  m (Maybe v, b)
+getPathLensWith mkAnn mkFirstAnn doRecurse path originalMap =
+  let (_, k) :| ks = zipHistory path
+   in foldlM go (buildLens k mkFirstAnn originalMap) ks
+  where
+    go (mVal, b) (history, k) = do
+      (nextMap, a) <- doRecurse history mVal
+      pure $ buildLens k (mkAnn b a) nextMap
+
+    buildLens k mkAnn' kvs = (Map.lookup k kvs, mkAnn' k kvs)
