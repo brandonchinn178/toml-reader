@@ -27,6 +27,8 @@ library
       TOML.Decode
       TOML.Internal
       TOML.Parser
+      TOML.Utils.Map
+      TOML.Utils.NonEmpty
   other-modules:
       Paths_toml_reader
   hs-source-dirs:
@@ -76,13 +78,17 @@ test-suite toml-reader-tests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   other-modules:
+      TOML.Utils.MapTest
+      TOML.Utils.NonEmptyTest
       Paths_toml_reader
   hs-source-dirs:
       test/tasty
   ghc-options: -Wall
   build-depends:
       base
+    , containers
     , tasty
+    , tasty-hunit
     , toml-reader
   if impl(ghc >= 8.0)
     ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances

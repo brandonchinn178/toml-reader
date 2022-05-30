@@ -40,7 +40,9 @@ tests:
     source-dirs: test/tasty
     dependencies:
       - base
+      - containers
       - tasty
+      - tasty-hunit
       - toml-reader
 
   parser-validator:

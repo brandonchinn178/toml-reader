@@ -39,6 +39,7 @@ import Text.Megaparsec.Char hiding (space, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 
 import TOML.Internal (NormalizeError (..), TOMLError (..), Table, Value (..))
+import TOML.Utils.Map (getPathLens)
 
 parseTOML :: String -> Text -> Either TOMLError Value
 parseTOML filename input =
@@ -504,7 +505,7 @@ normalize' TOMLDoc{..} = do
 
 mergeTableSectionTable :: Key -> RawTable -> AnnTable -> NormalizeM AnnTable
 mergeTableSectionTable sectionKey table baseTable =
-  withValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
+  setValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
     tableToExtend <-
       case mVal of
         -- if a value doesn't already exist, initialize an empty Map
@@ -530,7 +531,7 @@ mergeTableSectionTable sectionKey table baseTable =
         table
 
     let newTableMeta = TableMeta{tableType = ExplicitSection}
-    pure $ Just $ GenericTable newTableMeta mergedTable
+    pure $ GenericTable newTableMeta mergedTable
   where
     valueAtPathOptions =
       ValueAtPathOptions
@@ -563,7 +564,7 @@ mergeTableSectionTable sectionKey table baseTable =
 
 mergeTableSectionArray :: Key -> RawTable -> AnnTable -> NormalizeM AnnTable
 mergeTableSectionArray sectionKey table baseTable = do
-  withValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
+  setValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
     (meta, currArray) <-
       case mVal of
         -- if nothing exists, initialize an empty array
@@ -585,7 +586,7 @@ mergeTableSectionArray sectionKey table baseTable = do
 
     let newTableMeta = TableMeta{tableType = ExplicitSection}
     newTable <- GenericTable newTableMeta <$> flattenTable table
-    pure $ Just $ GenericArray meta $ currArray <> [newTable]
+    pure $ GenericArray meta $ currArray <> [newTable]
   where
     valueAtPathOptions =
       ValueAtPathOptions
@@ -628,8 +629,8 @@ mergeRawTable MergeOptions{..} baseTable table = foldlM insertRawValue baseTable
               , implicitType = ImplicitKey
               , makeMidPathNotTableError = nonTableInNestedKeyError key table
               }
-      withValueAtPath valueAtPathOptions key accTable $ \case
-        Nothing -> Just <$> fromRawValue rawValue
+      setValueAtPath valueAtPathOptions key accTable $ \case
+        Nothing -> fromRawValue rawValue
         Just existingValue ->
           normalizeError
             DuplicateKeyError
@@ -670,31 +671,22 @@ nonTableInNestedKeyError key table = \history existingValue ->
     , _originalValue = Table $ rawTableToApproxTable table
     }
 
-withValueAtPath ::
+setValueAtPath ::
   ValueAtPathOptions ->
   Key ->
   AnnTable ->
-  (Maybe AnnValue -> NormalizeM (Maybe AnnValue)) ->
+  (Maybe AnnValue -> NormalizeM AnnValue) ->
   NormalizeM AnnTable
-withValueAtPath ValueAtPathOptions{..} fullKey initialTable f = go Nothing fullKey initialTable
+setValueAtPath ValueAtPathOptions{..} fullKey initialTable f = do
+  (mValue, setValue) <- getPathLens doRecurse fullKey initialTable
+  setValue <$> f mValue
   where
-    go mHistory (k NonEmpty.:| ks) table = do
-      let kList = k NonEmpty.:| []
-          history = maybe kList (<> kList) mHistory
-      Map.alterF (handle history ks) k table
-    handle history ks mVal =
-      case NonEmpty.nonEmpty ks of
-        -- when we're at the last key
-        Nothing -> f mVal
-        -- when we want to keep recursing ...
-        Just ks' -> fmap Just $ do
-          let go' = go (Just history) ks'
-          case mVal of
-            -- ... and nothing exists, recurse into a new empty Map
+    doRecurse history = \case
+            -- If nothing exists, recurse into a new empty Map
             Nothing -> do
               let newTableMeta = TableMeta{tableType = implicitType}
-              GenericTable newTableMeta <$> go' Map.empty
-            -- ... and a Table exists, recurse into it
+              pure (Map.empty, GenericTable newTableMeta)
+            -- If a Table exists, recurse into it
             Just (GenericTable meta subTable) -> do
               unless (shouldRecurse $ tableType meta) $
                 normalizeError
@@ -702,16 +694,17 @@ withValueAtPath ValueAtPathOptions{..} fullKey initialTable f = go Nothing fullK
                     { _path = history
                     , _originalKey = fullKey
                     }
-              GenericTable meta <$> go' subTable
-            -- ... and Array exists, recurse into the last Table, per spec:
+              pure (subTable, GenericTable meta)
+            -- If an Array exists, recurse into the last Table, per spec:
             --   Any reference to an array of tables points to the
             --   most recently defined table element of the array.
             Just (GenericArray aMeta vs)
               | Just vs' <- NonEmpty.nonEmpty vs
               , GenericTable tMeta subTable <- NonEmpty.last vs' ->
-                  GenericArray aMeta . snoc (NonEmpty.init vs') . GenericTable tMeta <$> go' subTable
-            -- ... and something else exists, throw error with makeMidPathNotTableError
+                  pure (subTable, GenericArray aMeta . snoc (NonEmpty.init vs') . GenericTable tMeta)
+            -- If something else exists, throw error with makeMidPathNotTableError
             Just v -> normalizeError $ makeMidPathNotTableError history v
+
     snoc xs x = xs <> [x]
 
 -- | Convert a RawTable into a Table, for use in errors + debugging.
