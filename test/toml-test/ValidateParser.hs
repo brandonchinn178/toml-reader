@@ -8,13 +8,16 @@ import qualified Data.ByteString.Lazy.Char8 as Char8
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
+import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import qualified Data.Vector as Vector
 import System.Directory (findExecutable)
 import System.Environment (getArgs, getExecutablePath)
+import System.Exit (exitFailure)
+import System.IO (stderr)
 import System.Process (callProcess)
 
-import TOML (Value (..))
+import TOML (Value (..), renderTOMLError)
 import TOML.Parser (parseTOML)
 
 #if MIN_VERSION_aeson(2,0,0)
@@ -52,24 +55,33 @@ runTomlTest args = do
 checkTOML :: IO ()
 checkTOML = do
   input <- Text.getContents
-  output <- either (error . show) return $ parseTOML input
+  output <- either handleError return $ parseTOML "<stdin>" input
   Char8.putStrLn $ Aeson.encode $ toTaggedJSON output
+  where
+    handleError e = do
+      Text.hPutStrLn stderr $ renderTOMLError e
+      exitFailure
 
 toTaggedJSON :: Value -> Aeson.Value
 toTaggedJSON = \case
   Table o -> Aeson.Object $ toKeyMap $ toTaggedJSON <$> o
   Array vs -> Aeson.Array $ Vector.fromList $ map toTaggedJSON vs
-  String x -> tagged "string" x
-  Integer x -> tagged "integer" x
-  Float x -> tagged "float" x
-  Boolean x -> tagged "bool" x
+  String x -> tagged "string" (Text.unpack x)
+  Integer x -> tagged "integer" (show x)
+  Float x -> tagged "float" (showFloat x)
+  Boolean x -> tagged "bool" $ if x then "true" else "false"
   OffsetDateTime x -> tagged "datetime" $ iso8601Show x
   LocalDateTime x -> tagged "datetime-local" $ iso8601Show x
   LocalDate x -> tagged "date-local" $ iso8601Show x
   LocalTime x -> tagged "time-local" $ iso8601Show x
   where
-    tagged :: Aeson.ToJSON a => String -> a -> Aeson.Value
+    tagged :: String -> String -> Aeson.Value
     tagged ty v = Aeson.object ["type" .= ty, "value" .= v]
+
+    showFloat x
+      | isNaN x = "nan"
+      | isInfinite x = if x < 0 then "-inf" else "inf"
+      | otherwise = show x
 
 #if MIN_VERSION_aeson(2,0,0)
 toKeyMap :: Map Text Aeson.Value -> KeyMap Aeson.Value

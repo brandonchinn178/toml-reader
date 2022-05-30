@@ -29,14 +29,23 @@ library:
     - base >= 4.9 && < 5
     - containers >= 0.6.0.1 && < 0.7
     - deepseq >= 1.4.4.0 && < 1.5
+    - megaparsec >= 7.0.5 && < 9.3
+    - parser-combinators >= 1.1.0 && < 1.4
     - text >= 1.2.3.1 && < 1.3
     - time >= 1.8.0.2 && < 1.12
 
 tests:
-  # TODO: library tests for decode
+  toml-reader-tests:
+    main: Main.hs
+    source-dirs: test/tasty
+    dependencies:
+      - base
+      - tasty
+      - toml-reader
+
   parser-validator:
     main: ValidateParser.hs
-    source-dirs: test
+    source-dirs: test/toml-test
     dependencies:
       - aeson
       - base
