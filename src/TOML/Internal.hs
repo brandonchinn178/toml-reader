@@ -10,6 +10,9 @@ module TOML.Internal (
   Table,
   TOMLError (..),
   NormalizeError (..),
+  DecodeContext,
+  ContextItem (..),
+  DecodeError (..),
   renderTOMLError,
 ) where
 
@@ -60,7 +63,8 @@ renderValue = \case
 data TOMLError
   = ParseError Text
   | NormalizeError NormalizeError
-  deriving (Show)
+  | DecodeError DecodeContext DecodeError
+  deriving (Show, Eq)
 
 data NormalizeError
   = -- | When a key is defined twice, e.g.
@@ -142,7 +146,19 @@ data NormalizeError
       , _sectionKey :: NonEmpty Text
       , _tableSection :: Table
       }
-  deriving (Show)
+  deriving (Show, Eq)
+
+type DecodeContext = [ContextItem]
+
+data ContextItem = Key Text | Index Int
+  deriving (Show, Eq)
+
+data DecodeError
+  = MissingField
+  | InvalidValue Text Value
+  | TypeMismatch Value
+  | OtherDecodeError Text
+  deriving (Show, Eq)
 
 renderTOMLError :: TOMLError -> Text
 renderTOMLError = \case
@@ -177,5 +193,17 @@ renderTOMLError = \case
       , "  Existing value: " <> renderValue _existingValue
       , "  Array table section: " <> renderValue (Table _tableSection)
       ]
+  DecodeError ctx e -> "Decode error at '" <> renderDecodeContext ctx <> "': " <> renderDecodeError e
   where
     showPath path = "\"" <> Text.intercalate "." (NonEmpty.toList path) <> "\""
+
+    renderDecodeError = \case
+      MissingField -> "Field does not exist"
+      InvalidValue msg v -> "Invalid value: " <> msg <> ": " <> renderValue v
+      TypeMismatch v -> "Type mismatch: " <> renderValue v
+      OtherDecodeError msg -> msg
+
+    renderDecodeContext = Text.concat . map renderContextItem
+    renderContextItem = \case
+      Key k -> "." <> k
+      Index i -> "[" <> Text.pack (show i) <> "]"
