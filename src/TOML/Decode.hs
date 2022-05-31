@@ -1,7 +1,7 @@
 module TOML.Decode (
   -- * Decoder interface
   Decoder (..),
-  FromTOML (..),
+  DecodeTOML (..),
 
   -- * Decoding functions
   decode,
@@ -32,19 +32,19 @@ instance Applicative Decoder where
 instance Monad Decoder where
   Decoder decodeA >>= f = Decoder $ \v -> ($ v) . unDecoder . f =<< decodeA v
 
-{--- FromTOML ---}
+{--- DecodeTOML ---}
 
-class FromTOML a where
-  fromTOML :: Decoder a
+class DecodeTOML a where
+  tomlDecoder :: Decoder a
 
-instance FromTOML Value where
-  fromTOML = Decoder Right
+instance DecodeTOML Value where
+  tomlDecoder = Decoder Right
 
 {--- Decoding ---}
 
--- | Decode the given TOML input using the given FromTOML instance.
-decode :: FromTOML a => Text -> Either TOMLError a
-decode = decodeWith fromTOML
+-- | Decode the given TOML input using the given DecodeTOML instance.
+decode :: DecodeTOML a => Text -> Either TOMLError a
+decode = decodeWith tomlDecoder
 
 -- | Decode the given TOML input using the given Decoder.
 decodeWith :: Decoder a -> Text -> Either TOMLError a
@@ -54,5 +54,5 @@ decodeWithOpts :: Decoder a -> String -> Text -> Either TOMLError a
 decodeWithOpts decoder filename input = parseTOML filename input >>= unDecoder decoder
 
 -- | A helper for decoding a file at the given file path.
-decodeFile :: FromTOML a => FilePath -> IO (Either TOMLError a)
-decodeFile fp = decodeWithOpts fromTOML fp <$> Text.readFile fp
+decodeFile :: DecodeTOML a => FilePath -> IO (Either TOMLError a)
+decodeFile fp = decodeWithOpts tomlDecoder fp <$> Text.readFile fp

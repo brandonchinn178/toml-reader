@@ -2,7 +2,7 @@ module TOML (
   -- * Decoding a TOML file
   decode,
   decodeFile,
-  FromTOML (..),
+  DecodeTOML (..),
   Decoder,
 
   -- * TOML types
