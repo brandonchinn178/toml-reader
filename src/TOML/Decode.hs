@@ -1,6 +1,11 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module TOML.Decode (
   -- * Decoding functions
@@ -34,16 +39,44 @@ module TOML.Decode (
   decodeError,
 ) where
 
-import Control.Applicative (Alternative (..))
+import Control.Applicative (Alternative (..), Const (..))
 import Control.Monad (zipWithM)
 #if MIN_VERSION_base(4,9,0) && !MIN_VERSION_base(4,13,0)
 import qualified Control.Monad.Fail as MonadFail
 #endif
 import Data.Bifunctor (first)
+import Data.Fixed (Fixed, HasResolution)
+import Data.Functor.Identity (Identity (..))
+import Data.Int (Int16, Int32, Int64, Int8)
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
+import Data.IntSet (IntSet)
+import qualified Data.IntSet as IntSet
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.Map (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Monoid as Monoid
+import Data.Proxy (Proxy (..))
+import Data.Ratio (Ratio)
+import qualified Data.Semigroup as Semigroup
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Data.String (IsString, fromString)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
+import qualified Data.Text.Lazy as Lazy (Text)
+import qualified Data.Text.Lazy as Text.Lazy
+import qualified Data.Time as Time
+import qualified Data.Time.Clock.System as Time
+import Data.Version (Version, parseVersion)
+import Data.Void (Void)
+import Data.Word (Word16, Word32, Word64, Word8)
+import Numeric.Natural (Natural)
+import Text.ParserCombinators.ReadP (readP_to_S)
 
 import TOML.Internal (
   ContextItem (..),
@@ -224,17 +257,239 @@ class DecodeTOML a where
 instance DecodeTOML Value where
   tomlDecoder = Decoder pure
 
+instance DecodeTOML Void where
+  tomlDecoder = makeDecoder typeMismatch
+instance DecodeTOML Bool where
+  tomlDecoder =
+    makeDecoder $ \case
+      Boolean x -> pure x
+      v -> typeMismatch v
+
 instance DecodeTOML Integer where
   tomlDecoder =
     makeDecoder $ \case
       Integer x -> pure x
-      _ -> typeMismatch
-tomlDecoderInt :: forall a. (Integral a, Bounded a) => Decoder a
-tomlDecoderInt =
+      v -> typeMismatch v
+
+tomlDecoderInt :: forall a. Num a => Decoder a
+tomlDecoderInt = fromInteger <$> tomlDecoder
+
+tomlDecoderBoundedInt :: forall a. (Integral a, Bounded a) => Decoder a
+tomlDecoderBoundedInt =
   tomlDecoder >>= \case
     x
-      | x < toInteger (minBound @a) -> invalidValue "Underflow"
-      | x > toInteger (maxBound @a) -> invalidValue "Overflow"
+      | x < toInteger (minBound @a) -> makeDecoder $ invalidValue "Underflow"
+      | x > toInteger (maxBound @a) -> makeDecoder $ invalidValue "Overflow"
       | otherwise -> pure $ fromInteger x
+
 instance DecodeTOML Int where
-  tomlDecoder = tomlDecoderInt
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Int8 where
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Int16 where
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Int32 where
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Int64 where
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Word where
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Word8 where
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Word16 where
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Word32 where
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Word64 where
+  tomlDecoder = tomlDecoderBoundedInt
+instance DecodeTOML Natural where
+  tomlDecoder =
+    tomlDecoder >>= \case
+      x
+        | x >= 0 -> pure $ fromInteger x
+        | otherwise -> makeDecoder $ invalidValue "Got negative number"
+
+instance DecodeTOML Double where
+  tomlDecoder =
+    makeDecoder $ \case
+      Float x -> pure x
+      v -> typeMismatch v
+
+tomlDecoderFrac :: Fractional a => Decoder a
+tomlDecoderFrac = realToFrac <$> tomlDecoder @Double
+
+instance DecodeTOML Float where
+  tomlDecoder = tomlDecoderFrac
+instance Integral a => DecodeTOML (Ratio a) where
+  tomlDecoder = tomlDecoderFrac
+instance HasResolution a => DecodeTOML (Fixed a) where
+  tomlDecoder = tomlDecoderFrac
+
+instance DecodeTOML Char where
+  tomlDecoder =
+    tomlDecoder >>= \case
+      s
+        | Text.length s == 1 -> pure $ Text.head s
+        | otherwise -> makeDecoder $ invalidValue "Expected single character string"
+instance {-# OVERLAPPING #-} DecodeTOML String where
+  tomlDecoder = Text.unpack <$> tomlDecoder
+instance DecodeTOML Text where
+  tomlDecoder =
+    makeDecoder $ \case
+      String s -> pure s
+      v -> typeMismatch v
+instance DecodeTOML Lazy.Text where
+  tomlDecoder = Text.Lazy.fromStrict <$> tomlDecoder
+
+instance DecodeTOML Time.ZonedTime where
+  tomlDecoder =
+    makeDecoder $ \case
+      OffsetDateTime (lt, tz) -> pure $ Time.ZonedTime lt tz
+      v -> typeMismatch v
+instance DecodeTOML Time.UTCTime where
+  tomlDecoder = Time.zonedTimeToUTC <$> tomlDecoder
+instance DecodeTOML Time.SystemTime where
+  tomlDecoder = Time.utcToSystemTime . Time.zonedTimeToUTC <$> tomlDecoder
+instance DecodeTOML Time.LocalTime where
+  tomlDecoder =
+    makeDecoder $ \case
+      LocalDateTime dt -> pure dt
+      v -> typeMismatch v
+instance DecodeTOML Time.Day where
+  tomlDecoder =
+    makeDecoder $ \case
+      LocalDate d -> pure d
+      v -> typeMismatch v
+instance DecodeTOML Time.TimeOfDay where
+  tomlDecoder =
+    makeDecoder $ \case
+      LocalTime t -> pure t
+      v -> typeMismatch v
+#if MIN_VERSION_time(1,9,0)
+instance DecodeTOML Time.DayOfWeek where
+  tomlDecoder = toDayOfWeek . Text.toLower =<< tomlDecoder
+    where
+      toDayOfWeek = \case
+        "monday" -> pure Time.Monday
+        "tuesday" -> pure Time.Tuesday
+        "wednesday" -> pure Time.Wednesday
+        "thursday" -> pure Time.Thursday
+        "friday" -> pure Time.Friday
+        "saturday" -> pure Time.Saturday
+        "sunday" -> pure Time.Sunday
+        _ -> makeDecoder $ invalidValue "Invalid day of week"
+#endif
+
+instance DecodeTOML Time.DiffTime where
+  tomlDecoder = tomlDecoderInt <|> tomlDecoderFrac
+instance DecodeTOML Time.NominalDiffTime where
+  tomlDecoder = tomlDecoderInt <|> tomlDecoderFrac
+#if MIN_VERSION_time(1,9,0)
+instance DecodeTOML Time.CalendarDiffTime where
+  tomlDecoder =
+    Time.CalendarDiffTime
+      <$> getField "months"
+      <*> getField "time"
+instance DecodeTOML Time.CalendarDiffDays where
+  tomlDecoder =
+    Time.CalendarDiffDays
+      <$> getField "months"
+      <*> getField "days"
+#endif
+
+instance DecodeTOML Version where
+  tomlDecoder = go . readP_to_S parseVersion =<< tomlDecoder
+    where
+      go ((v, []) : _) = pure v
+      go (_ : vs) = go vs
+      go [] = makeDecoder $ invalidValue "Invalid Version"
+instance DecodeTOML Ordering where
+  tomlDecoder =
+    tomlDecoder @Text >>= \case
+      "LT" -> pure LT
+      "EQ" -> pure EQ
+      "GT" -> pure GT
+      _ -> makeDecoder $ invalidValue "Invalid Ordering"
+
+instance DecodeTOML a => DecodeTOML (Identity a) where
+  tomlDecoder = Identity <$> tomlDecoder
+instance DecodeTOML (Proxy a) where
+  tomlDecoder = pure Proxy
+instance DecodeTOML a => DecodeTOML (Const a b) where
+  tomlDecoder = Const <$> tomlDecoder
+instance DecodeTOML a => DecodeTOML (Maybe a) where
+  tomlDecoder = Just <$> tomlDecoder
+instance (DecodeTOML a, DecodeTOML b) => DecodeTOML (Either a b) where
+  tomlDecoder = (Right <$> tomlDecoder) <|> (Left <$> tomlDecoder)
+
+instance DecodeTOML a => DecodeTOML (Monoid.First a) where
+  tomlDecoder = Monoid.First <$> tomlDecoder
+instance DecodeTOML a => DecodeTOML (Monoid.Last a) where
+  tomlDecoder = Monoid.Last <$> tomlDecoder
+instance DecodeTOML a => DecodeTOML (Semigroup.First a) where
+  tomlDecoder = Semigroup.First <$> tomlDecoder
+instance DecodeTOML a => DecodeTOML (Semigroup.Last a) where
+  tomlDecoder = Semigroup.Last <$> tomlDecoder
+instance DecodeTOML a => DecodeTOML (Semigroup.Max a) where
+  tomlDecoder = Semigroup.Max <$> tomlDecoder
+instance DecodeTOML a => DecodeTOML (Semigroup.Min a) where
+  tomlDecoder = Semigroup.Min <$> tomlDecoder
+instance DecodeTOML a => DecodeTOML (Monoid.Dual a) where
+  tomlDecoder = Monoid.Dual <$> tomlDecoder
+
+instance DecodeTOML a => DecodeTOML [a] where
+  tomlDecoder = getArrayOf tomlDecoder
+instance (IsString k, Ord k, DecodeTOML v) => DecodeTOML (Map k v) where
+  tomlDecoder =
+    makeDecoder $ \case
+      Table o -> Map.mapKeys (fromString . Text.unpack) <$> mapM (runDecoder tomlDecoder) o
+      v -> typeMismatch v
+instance DecodeTOML a => DecodeTOML (NonEmpty a) where
+  tomlDecoder = maybe raiseEmpty pure . NonEmpty.nonEmpty =<< tomlDecoder
+    where
+      raiseEmpty = makeDecoder $ invalidValue "Got empty list"
+instance DecodeTOML IntSet where
+  tomlDecoder = IntSet.fromList <$> tomlDecoder
+instance (DecodeTOML a, Ord a) => DecodeTOML (Set a) where
+  tomlDecoder = Set.fromList <$> tomlDecoder
+instance DecodeTOML a => DecodeTOML (IntMap a) where
+  tomlDecoder = IntMap.fromList <$> tomlDecoder
+instance DecodeTOML a => DecodeTOML (Seq a) where
+  tomlDecoder = Seq.fromList <$> tomlDecoder
+
+tomlDecoderTuple :: ([Value] -> Maybe (DecodeM a)) -> Decoder a
+tomlDecoderTuple f =
+  makeDecoder $ \case
+    Array vs | Just decodeM <- f vs -> decodeM
+    v -> typeMismatch v
+instance DecodeTOML () where
+  tomlDecoder = tomlDecoderTuple $ \case
+    [] -> Just $ pure ()
+    _ -> Nothing
+instance (DecodeTOML a, DecodeTOML b) => DecodeTOML (a, b) where
+  tomlDecoder = tomlDecoderTuple $ \case
+    [a, b] ->
+      Just $
+        (,)
+          <$> runDecoder tomlDecoder a
+          <*> runDecoder tomlDecoder b
+    _ -> Nothing
+instance (DecodeTOML a, DecodeTOML b, DecodeTOML c) => DecodeTOML (a, b, c) where
+  tomlDecoder = tomlDecoderTuple $ \case
+    [a, b, c] ->
+      Just $
+        (,,)
+          <$> runDecoder tomlDecoder a
+          <*> runDecoder tomlDecoder b
+          <*> runDecoder tomlDecoder c
+    _ -> Nothing
+instance (DecodeTOML a, DecodeTOML b, DecodeTOML c, DecodeTOML d) => DecodeTOML (a, b, c, d) where
+  tomlDecoder = tomlDecoderTuple $ \case
+    [a, b, c, d] ->
+      Just $
+        (,,,)
+          <$> runDecoder tomlDecoder a
+          <*> runDecoder tomlDecoder b
+          <*> runDecoder tomlDecoder c
+          <*> runDecoder tomlDecoder d
+    _ -> Nothing
