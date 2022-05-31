@@ -1,13 +1,13 @@
 module TOML.Decode (
-  -- * Decoder interface
-  Decoder (..),
-  DecodeTOML (..),
-
   -- * Decoding functions
   decode,
   decodeWith,
   decodeWithOpts,
   decodeFile,
+
+  -- * Decoder interface
+  Decoder (..),
+  DecodeTOML (..),
 ) where
 
 import Data.Text (Text)

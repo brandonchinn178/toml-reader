@@ -1,6 +1,7 @@
 module TOML (
   -- * Decoding a TOML file
   decode,
+  decodeWith,
   decodeFile,
   DecodeTOML (..),
   Decoder,
