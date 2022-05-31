@@ -74,6 +74,7 @@ test-suite toml-reader-tests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   other-modules:
+      TOML.DecodeTest
       TOML.Utils.MapTest
       TOML.Utils.NonEmptyTest
       Paths_toml_reader

@@ -223,3 +223,18 @@ class DecodeTOML a where
 
 instance DecodeTOML Value where
   tomlDecoder = Decoder pure
+
+instance DecodeTOML Integer where
+  tomlDecoder =
+    makeDecoder $ \case
+      Integer x -> pure x
+      _ -> typeMismatch
+tomlDecoderInt :: forall a. (Integral a, Bounded a) => Decoder a
+tomlDecoderInt =
+  tomlDecoder >>= \case
+    x
+      | x < toInteger (minBound @a) -> invalidValue "Underflow"
+      | x > toInteger (maxBound @a) -> invalidValue "Overflow"
+      | otherwise -> pure $ fromInteger x
+instance DecodeTOML Int where
+  tomlDecoder = tomlDecoderInt

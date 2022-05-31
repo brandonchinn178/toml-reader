@@ -762,7 +762,7 @@ hsymbol s = hspace >> string s >> hspace >> pure ()
 
 -- | Parse trailing whitespace/trailing comments + newline
 endOfLine :: Parser ()
-endOfLine = L.space hspace1 skipComments empty >> eol >> pure ()
+endOfLine = L.space hspace1 skipComments empty >> (void eol <|> eof) >> pure ()
 
 -- | Parse spaces, newlines, and comments
 emptyLines :: Parser ()
