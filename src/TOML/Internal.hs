@@ -20,7 +20,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
+import Data.Time (Day, LocalTime, TimeOfDay, TimeZone)
 import GHC.Generics (Generic)
 
 type Table = Map Text Value
@@ -32,7 +32,7 @@ data Value
   | Integer Integer
   | Float Double
   | Boolean Bool
-  | OffsetDateTime UTCTime
+  | OffsetDateTime (LocalTime, TimeZone)
   | LocalDateTime LocalTime
   | LocalDate Day
   | LocalTime TimeOfDay

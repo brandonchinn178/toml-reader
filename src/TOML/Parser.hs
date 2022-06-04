@@ -30,7 +30,7 @@ import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
+import Data.Time (Day, LocalTime, TimeOfDay, TimeZone)
 import qualified Data.Time as Time
 import Data.Void (Void)
 import qualified Numeric
@@ -54,7 +54,7 @@ data GenericValue map key tableMeta arrayMeta
   | GenericInteger Integer
   | GenericFloat Double
   | GenericBoolean Bool
-  | GenericOffsetDateTime UTCTime
+  | GenericOffsetDateTime (LocalTime, TimeZone)
   | GenericLocalDateTime LocalTime
   | GenericLocalDate Day
   | GenericLocalTime TimeOfDay
@@ -295,11 +295,8 @@ isLiteralChar c =
   where
     code = ord c
 
-parseOffsetDateTime :: Parser UTCTime
-parseOffsetDateTime = do
-  lt <- parseLocalDateTime
-  tz <- parseTimezone
-  return $ Time.localTimeToUTC tz lt
+parseOffsetDateTime :: Parser (LocalTime, TimeZone)
+parseOffsetDateTime = (,) <$> parseLocalDateTime <*> parseTimezone
   where
     parseTimezone =
       choice
