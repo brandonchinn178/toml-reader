@@ -198,7 +198,8 @@ parseBasicString =
 parseLiteralString :: Parser Text
 parseLiteralString =
   label "single-quoted string" $
-    between (char '\'') (char '\'') $ takeWhileP (Just "literal-char") isLiteralChar
+    between (char '\'') (char '\'') $
+      takeWhileP (Just "literal-char") isLiteralChar
 
 -- | A multiline string with three double quotes.
 parseMultilineBasicString :: Parser Text
