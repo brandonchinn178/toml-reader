@@ -40,7 +40,7 @@ renderValue = \case
   String s -> showT s
   Integer x -> showT x
   Float x -> showT x
-  Boolean b -> showT b
+  Boolean b -> if b then "true" else "false"
   OffsetDateTime x -> showT x
   LocalDateTime x -> showT x
   LocalDate x -> showT x

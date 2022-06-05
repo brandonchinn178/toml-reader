@@ -76,6 +76,7 @@ test-suite toml-reader-tests
   main-is: Main.hs
   other-modules:
       TOML.DecodeTest
+      TOML.ErrorTest
       TOML.Utils.MapTest
       TOML.Utils.NonEmptyTest
       Paths_toml_reader
@@ -86,8 +87,10 @@ test-suite toml-reader-tests
       base
     , containers
     , tasty
+    , tasty-golden
     , tasty-hunit
     , text
+    , time
     , toml-reader
   if impl(ghc >= 8.0)
     ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances

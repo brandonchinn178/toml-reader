@@ -39,8 +39,10 @@ tests:
       - base
       - containers
       - tasty
+      - tasty-golden
       - tasty-hunit
       - text
+      - time
       - toml-reader
 
   parser-validator:

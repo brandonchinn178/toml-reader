@@ -158,7 +158,7 @@ renderTOMLError = \case
     renderDecodeError = \case
       MissingField -> "Field does not exist"
       InvalidValue msg v -> "Invalid value: " <> msg <> ": " <> renderValue v
-      TypeMismatch v -> "Type mismatch: " <> renderValue v
+      TypeMismatch v -> "Type mismatch, got: " <> renderValue v
       OtherDecodeError msg -> msg
 
     renderDecodeContext = Text.concat . map renderContextItem

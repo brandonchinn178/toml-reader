@@ -417,8 +417,14 @@ instance DecodeTOML (Proxy a) where
   tomlDecoder = pure Proxy
 instance DecodeTOML a => DecodeTOML (Const a b) where
   tomlDecoder = Const <$> tomlDecoder
+
+{- |
+Since TOML doesn't support literal NULLs, this will only ever return 'Just'.
+To get the absence of a field, use 'getFieldOpt' or one of its variants.
+-}
 instance DecodeTOML a => DecodeTOML (Maybe a) where
   tomlDecoder = Just <$> tomlDecoder
+
 instance (DecodeTOML a, DecodeTOML b) => DecodeTOML (Either a b) where
   tomlDecoder = (Right <$> tomlDecoder) <|> (Left <$> tomlDecoder)
 
@@ -462,6 +468,8 @@ tomlDecoderTuple f =
   makeDecoder $ \case
     Array vs | Just decodeM <- f vs -> decodeM
     v -> typeMismatch v
+decodeElem :: DecodeTOML a => Int -> Value -> DecodeM a
+decodeElem i v = addContextItem (Index i) (runDecoder tomlDecoder v)
 instance DecodeTOML () where
   tomlDecoder = tomlDecoderTuple $ \case
     [] -> Just $ pure ()
@@ -471,25 +479,25 @@ instance (DecodeTOML a, DecodeTOML b) => DecodeTOML (a, b) where
     [a, b] ->
       Just $
         (,)
-          <$> runDecoder tomlDecoder a
-          <*> runDecoder tomlDecoder b
+          <$> decodeElem 0 a
+          <*> decodeElem 1 b
     _ -> Nothing
 instance (DecodeTOML a, DecodeTOML b, DecodeTOML c) => DecodeTOML (a, b, c) where
   tomlDecoder = tomlDecoderTuple $ \case
     [a, b, c] ->
       Just $
         (,,)
-          <$> runDecoder tomlDecoder a
-          <*> runDecoder tomlDecoder b
-          <*> runDecoder tomlDecoder c
+          <$> decodeElem 0 a
+          <*> decodeElem 1 b
+          <*> decodeElem 2 c
     _ -> Nothing
 instance (DecodeTOML a, DecodeTOML b, DecodeTOML c, DecodeTOML d) => DecodeTOML (a, b, c, d) where
   tomlDecoder = tomlDecoderTuple $ \case
     [a, b, c, d] ->
       Just $
         (,,,)
-          <$> runDecoder tomlDecoder a
-          <*> runDecoder tomlDecoder b
-          <*> runDecoder tomlDecoder c
-          <*> runDecoder tomlDecoder d
+          <$> decodeElem 0 a
+          <*> decodeElem 1 b
+          <*> decodeElem 2 c
+          <*> decodeElem 3 d
     _ -> Nothing

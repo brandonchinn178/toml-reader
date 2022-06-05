@@ -1,0 +1,2 @@
+Invalid table key: "a.b"
+  Table already statically defined at "a"

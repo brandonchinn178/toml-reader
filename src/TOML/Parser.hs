@@ -335,8 +335,10 @@ parseLocalTime = do
   _ <- char ':'
   sInt <- parseSeconds
   sFracRaw <- optional $ fmap Text.pack $ char '.' >> some digitChar
-  let sFrac = MkFixed $ maybe 0 (readDec . truncateText 12) sFracRaw
+  let sFrac = MkFixed $ maybe 0 readPicoDigits sFracRaw
   return $ Time.TimeOfDay h m (fromIntegral sInt + sFrac)
+  where
+    readPicoDigits s = readDec $ Text.take 12 (s <> Text.replicate 12 "0")
 
 parseHours :: Parser Int
 parseHours = do
@@ -808,12 +810,6 @@ exactly :: Int -> Char -> Parser Text
 exactly n c = try $ Text.pack <$> count n (char c) <* notFollowedBy (char c)
 
 {--- Read Helpers ---}
-
-truncateText :: Int -> Text -> Text
-truncateText n t =
-  case Text.chunksOf n t of
-    [] -> ""
-    t' : _ -> t'
 
 -- | Assumes string satisfies @all isDigit@.
 readFloat :: (Show a, RealFrac a) => Text -> a
