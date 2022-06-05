@@ -221,13 +221,13 @@ getFieldsWith decoder = makeDecoder . go
   where
     go [] v = runDecoder decoder v
     go (k : ks) v =
-      addContextItem (Key k) $
-        case v of
-          Table o ->
+      case v of
+        Table o ->
+          addContextItem (Key k) $
             case Map.lookup k o of
               Just v' -> go ks v'
               Nothing -> decodeError MissingField
-          _ -> typeMismatch v
+        _ -> typeMismatch v
 
 -- | Decode a nested field in a TOML Value, or Nothing if any of the fields don't exist.
 getFieldsOpt :: DecodeTOML a => [Text] -> Decoder (Maybe a)
