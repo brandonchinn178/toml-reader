@@ -25,10 +25,11 @@ library
   exposed-modules:
       TOML
       TOML.Decode
-      TOML.Internal
+      TOML.Error
       TOML.Parser
       TOML.Utils.Map
       TOML.Utils.NonEmpty
+      TOML.Value
   other-modules:
       Paths_toml_reader
   hs-source-dirs:

@@ -78,14 +78,14 @@ import Data.Word (Word16, Word32, Word64, Word8)
 import Numeric.Natural (Natural)
 import Text.ParserCombinators.ReadP (readP_to_S)
 
-import TOML.Internal (
+import TOML.Error (
   ContextItem (..),
   DecodeContext,
   DecodeError (..),
   TOMLError (..),
-  Value (..),
  )
 import TOML.Parser (parseTOML)
+import TOML.Value (Value (..))
 
 {--- Decoder ---}
 

@@ -39,4 +39,5 @@ module TOML (
 ) where
 
 import TOML.Decode
-import TOML.Internal
+import TOML.Error
+import TOML.Value

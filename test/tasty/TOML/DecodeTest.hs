@@ -7,12 +7,6 @@ import qualified Data.Text as Text
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
 
-import TOML (
-  ContextItem (..),
-  DecodeError (..),
-  TOMLError (..),
-  Value (..),
- )
 import TOML.Decode (
   DecodeTOML,
   Decoder,
@@ -27,6 +21,12 @@ import TOML.Decode (
   getFieldsWith,
   tomlDecoder,
  )
+import TOML.Error (
+  ContextItem (..),
+  DecodeError (..),
+  TOMLError (..),
+ )
+import TOML.Value (Value (..))
 
 -- TODO: test Boolean
 -- TODO: test Char

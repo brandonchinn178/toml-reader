@@ -38,8 +38,9 @@ import Text.Megaparsec hiding (sepBy1)
 import Text.Megaparsec.Char hiding (space, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 
-import TOML.Internal (NormalizeError (..), TOMLError (..), Table, Value (..))
+import TOML.Error (NormalizeError (..), TOMLError (..))
 import TOML.Utils.Map (getPathLens)
+import TOML.Value (Table, Value (..))
 
 parseTOML :: String -> Text -> Either TOMLError Value
 parseTOML filename input =
