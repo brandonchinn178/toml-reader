@@ -71,6 +71,14 @@ renderTOMLErrorTests =
               }
         )
       ,
+        ( "NormalizeError.ExtendTableInInlineArrayError"
+        , NormalizeError
+            ExtendTableInInlineArrayError
+              { _path = subPath
+              , _originalKey = fullPath
+              }
+        )
+      ,
         ( "NormalizeError.ImplicitArrayForDefinedKeyError"
         , NormalizeError
             ImplicitArrayForDefinedKeyError

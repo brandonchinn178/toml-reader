@@ -64,6 +64,16 @@ data NormalizeError
       { _path :: NonEmpty Text
       , _originalKey :: NonEmpty Text
       }
+  | -- | When a section attempts to extend a table within an inline array
+    --
+    -- @
+    -- a = [{ b = 1 }]
+    -- [a.c]
+    -- @
+    ExtendTableInInlineArrayError
+      { _path :: NonEmpty Text
+      , _originalKey :: NonEmpty Text
+      }
   | -- | When a key is already defined, but attempting to create an
     -- implicit array at the same key, e.g.
     --
@@ -132,6 +142,11 @@ renderTOMLError = \case
     Text.unlines
       [ "Invalid table key: " <> showPath _originalKey
       , "  Table already statically defined at " <> showPath _path
+      ]
+  NormalizeError ExtendTableInInlineArrayError{..} ->
+    Text.unlines
+      [ "Invalid table key: " <> showPath _originalKey
+      , "  Table defined in inline array at " <> showPath _path
       ]
   NormalizeError ImplicitArrayForDefinedKeyError{..} ->
     Text.unlines
