@@ -47,7 +47,9 @@ runTomlTest :: [String] -> IO ()
 runTomlTest args = do
   thisExe <- getExecutablePath
   findExecutable "toml-test" >>= \case
-    Nothing -> error "Could not find 'toml-test' executable"
+    Nothing ->
+      -- don't error, so that Hackage's test run doesn't fail
+      putStrLn "WARNING: toml-test not installed. Skipping test suite..."
     Just tomlTestExe ->
       callProcess tomlTestExe $
         args ++ ["-color", "always", "--", thisExe, "--check"]
