@@ -53,7 +53,6 @@ library
   build-depends:
       base >=4.9 && <5
     , containers >=0.6.0.1 && <0.7
-    , deepseq >=1.4.4.0 && <1.5
     , megaparsec >=7.0.5 && <9.3
     , parser-combinators >=1.1.0 && <1.4
     , text >=1.2.3.1 && <1.3
