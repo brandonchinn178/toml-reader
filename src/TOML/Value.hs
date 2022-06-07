@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -9,13 +7,11 @@ module TOML.Value (
   Table,
 ) where
 
-import Control.DeepSeq (NFData)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Time (Day, LocalTime, TimeOfDay, TimeZone)
-import GHC.Generics (Generic)
 
 type Table = Map Text Value
 
@@ -30,7 +26,7 @@ data Value
   | LocalDateTime LocalTime
   | LocalDate Day
   | LocalTime TimeOfDay
-  deriving (Show, Eq, Generic, NFData)
+  deriving (Show, Eq)
 
 -- | Render a Value in pseudo-JSON format.
 renderValue :: Value -> Text
