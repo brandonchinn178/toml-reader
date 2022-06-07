@@ -7,15 +7,18 @@ cabal-version: 1.12
 name:           toml-reader
 version:        0.1.0.0
 synopsis:       TOML format parser compliant with v1.0.0.
-description:    See README.md
+description:    TOML format parser compliant with v1.0.0. See README.md for more details.
+category:       TOML, Text, Configuration
 homepage:       https://github.com/brandonchinn178/toml-reader#readme
 bug-reports:    https://github.com/brandonchinn178/toml-reader/issues
 author:         Brandon Chinn <brandonchinn178@gmail.com>
 maintainer:     Brandon Chinn <brandonchinn178@gmail.com>
 license:        BSD3
+license-file:   LICENSE.md
 build-type:     Simple
 extra-source-files:
     README.md
+    CHANGELOG.md
     test/tasty/goldens/renderTOMLError/DecodeError.InvalidValue.golden
     test/tasty/goldens/renderTOMLError/DecodeError.MissingField.golden
     test/tasty/goldens/renderTOMLError/DecodeError.OtherDecodeError.golden
