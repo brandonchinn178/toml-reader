@@ -24,7 +24,6 @@ module TOML (
   invalidValue,
   typeMismatch,
   decodeFail,
-  decodeError,
 
   -- * TOML types
   Value (..),

@@ -33,6 +33,7 @@ module TOML.Decode (
   DecodeM (..),
   makeDecoder,
   runDecoder,
+  addContextItem,
   invalidValue,
   typeMismatch,
   decodeFail,
@@ -89,6 +90,32 @@ import TOML.Value (Value (..))
 
 {--- Decoder ---}
 
+{- |
+A @Decoder a@ represents a function for decoding a TOML value to a value of type @a@.
+
+Generally, you'd only need to chain the @getField*@ functions together, like
+
+@
+decoder =
+  MyConfig
+    \<$> getField "a"
+    \<*> getField "b"
+    \<*> getField "c"
+@
+
+or use interfaces like 'Monad' and 'Alternative':
+
+@
+decoder = do
+  cfgType <- getField "type"
+  case cfgType of
+    "int" -> MyIntValue \<$> (getField "int" \<|> getField "integer")
+    "bool" -> MyBoolValue \<$> getField "bool"
+    _ -> fail $ "Invalid type: " <> cfgType
+@
+
+but you can also manually implement a 'Decoder' with 'makeDecoder'.
+-}
 newtype Decoder a = Decoder {unDecoder :: Value -> DecodeM a}
 
 instance Functor Decoder where
@@ -115,12 +142,14 @@ instance MonadFail.MonadFail Decoder where
   fail msg = Decoder $ \_ -> decodeFail $ Text.pack msg
 #endif
 
+-- | Manually implement a 'Decoder' with the given function.
 makeDecoder :: (Value -> DecodeM a) -> Decoder a
 makeDecoder = Decoder
 
 decoderToEither :: Decoder a -> Value -> DecodeContext -> Either (DecodeContext, DecodeError) a
 decoderToEither decoder v ctx = unDecodeM (unDecoder decoder v) ctx
 
+-- | The underlying decoding monad that either returns a value of type @a@ or returns an error.
 newtype DecodeM a = DecodeM {unDecodeM :: DecodeContext -> Either (DecodeContext, DecodeError) a}
 
 instance Functor DecodeM where
@@ -150,18 +179,62 @@ instance MonadFail.MonadFail DecodeM where
   fail = decodeFail . Text.pack
 #endif
 
+{- |
+Run a 'Decoder' with the given 'Value'.
+
+@
+makeDecoder $ \\v -> do
+  a <- runDecoder decoder1 v
+  b <- runDecoder decoder2 v
+  return (a, b)
+@
+
+Satisfies
+
+@
+makeDecoder . runDecoder === id
+runDecoder . makeDecoder === id
+@
+-}
 runDecoder :: Decoder a -> Value -> DecodeM a
 runDecoder decoder v = DecodeM (decoderToEither decoder v)
 
+{- |
+Throw an error indicating that the given 'Value' is invalid.
+
+@
+makeDecoder $ \\v ->
+  case v of
+    Integer 42 -> invalidValue "We don't like this number" v
+    _ -> runDecoder tomlDecoder v
+
+-- or alternatively,
+tomlDecoder >>= \case
+  42 -> makeDecoder $ invalidValue "We don't like this number"
+  v -> pure v
+@
+-}
 invalidValue :: Text -> Value -> DecodeM a
 invalidValue msg v = decodeError $ InvalidValue msg v
 
+{- |
+Throw an error indicating that the given 'Value' isn't the correct type of value.
+
+@
+makeDecoder $ \\v ->
+  case v of
+    String s -> ...
+    _ -> typeMismatch v
+@
+-}
 typeMismatch :: Value -> DecodeM a
 typeMismatch v = decodeError $ TypeMismatch v
 
+-- | Throw a generic failure message.
 decodeFail :: Text -> DecodeM a
 decodeFail msg = decodeError $ OtherDecodeError msg
 
+-- | Throw the given 'DecodeError'.
 decodeError :: DecodeError -> DecodeM a
 decodeError e = DecodeM $ \ctx -> Left (ctx, e)
 
@@ -170,11 +243,11 @@ addContextItem p m = DecodeM $ \ctx -> unDecodeM m (ctx <> [p])
 
 {--- Decoding ---}
 
--- | Decode the given TOML input using the given DecodeTOML instance.
+-- | Decode the given TOML input.
 decode :: DecodeTOML a => Text -> Either TOMLError a
 decode = decodeWith tomlDecoder
 
--- | Decode the given TOML input using the given Decoder.
+-- | Decode the given TOML input using the given 'Decoder'.
 decodeWith :: Decoder a -> Text -> Either TOMLError a
 decodeWith decoder = decodeWithOpts decoder ""
 
@@ -183,7 +256,7 @@ decodeWithOpts decoder filename input = do
   v <- parseTOML filename input
   first (uncurry DecodeError) $ decoderToEither decoder v []
 
--- | A helper for decoding a file at the given file path.
+-- | Decode a TOML file at the given file path.
 decodeFile :: DecodeTOML a => FilePath -> IO (Either TOMLError a)
 decodeFile fp = decodeWithOpts tomlDecoder fp <$> Text.readFile fp
 
@@ -192,26 +265,56 @@ decodeFile fp = decodeWithOpts tomlDecoder fp <$> Text.readFile fp
 {- |
 Decode a field in a TOML Value.
 Equivalent to 'getFields' with a single-element list.
+
+@
+a = 1
+b = 'asdf'
+@
+
+@
+-- MyConfig 1 "asdf"
+MyConfig \<$> getField "a" \<*> getField "b"
+@
 -}
 getField :: DecodeTOML a => Text -> Decoder a
 getField = getFieldWith tomlDecoder
 
--- | Same as 'getField', except with the provided 'Decoder'.
+-- | Same as 'getField', except with the given 'Decoder'.
 getFieldWith :: Decoder a -> Text -> Decoder a
 getFieldWith decoder key = getFieldsWith decoder [key]
 
 {- |
 Decode a field in a TOML Value, or Nothing if the field doesn't exist.
 Equivalent to 'getFieldsOpt' with a single-element list.
+
+@
+a = 1
+@
+
+@
+-- MyConfig (Just 1) Nothing
+MyConfig \<$> getFieldOpt "a" \<*> getFieldOpt "b"
+@
 -}
 getFieldOpt :: DecodeTOML a => Text -> Decoder (Maybe a)
 getFieldOpt = getFieldOptWith tomlDecoder
 
--- | Same as 'getFieldOpt', except with the provided 'Decoder'.
+-- | Same as 'getFieldOpt', except with the given 'Decoder'.
 getFieldOptWith :: Decoder a -> Text -> Decoder (Maybe a)
 getFieldOptWith decoder key = getFieldsOptWith decoder [key]
 
--- | Decode a nested field in a TOML Value.
+{- |
+Decode a nested field in a TOML Value.
+
+@
+a.b = 1
+@
+
+@
+-- MyConfig 1
+MyConfig \<$> getFields ["a", "b"]
+@
+-}
 getFields :: DecodeTOML a => [Text] -> Decoder a
 getFields = getFieldsWith tomlDecoder
 
@@ -229,7 +332,21 @@ getFieldsWith decoder = makeDecoder . go
               Nothing -> decodeError MissingField
         _ -> typeMismatch v
 
--- | Decode a nested field in a TOML Value, or Nothing if any of the fields don't exist.
+{- |
+Decode a nested field in a TOML Value, or 'Nothing' if any of the fields don't exist.
+
+@
+a.b = 1
+@
+
+@
+-- MyConfig (Just 1) Nothing Nothing
+MyConfig
+  \<$> getFieldsOpt ["a", "b"]
+  \<*> getFieldsOpt ["a", "c"]
+  \<*> getFieldsOpt ["b", "c"]
+@
+-}
 getFieldsOpt :: DecodeTOML a => [Text] -> Decoder (Maybe a)
 getFieldsOpt = getFieldsOptWith tomlDecoder
 
@@ -243,6 +360,23 @@ getFieldsOptWith decoder keys =
         Left (ctx', e) -> Left (ctx', e)
         Right x -> Right $ Just x
 
+{- |
+Decode a list of values using the given 'Decoder'.
+
+@
+[[a]]
+b = 1
+
+[[a]]
+b = 2
+@
+
+@
+-- MyConfig [1, 2]
+MyConfig
+  \<$> getFieldWith (getArrayOf (getField "b")) "a"
+@
+-}
 getArrayOf :: Decoder a -> Decoder [a]
 getArrayOf decoder =
   makeDecoder $ \case
@@ -251,6 +385,11 @@ getArrayOf decoder =
 
 {--- DecodeTOML ---}
 
+{- |
+A type class containing the default 'Decoder' for the given type.
+
+See the docs for 'Decoder' for examples.
+-}
 class DecodeTOML a where
   tomlDecoder :: Decoder a
 

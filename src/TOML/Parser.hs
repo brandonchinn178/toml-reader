@@ -9,6 +9,7 @@
 Parse a TOML document.
 
 References:
+
 * https://toml.io/en/v1.0.0
 * https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf
 -}
@@ -42,7 +43,12 @@ import TOML.Error (NormalizeError (..), TOMLError (..))
 import TOML.Utils.Map (getPathLens)
 import TOML.Value (Table, Value (..))
 
-parseTOML :: String -> Text -> Either TOMLError Value
+parseTOML ::
+  -- | Name of file (for error messages)
+  String ->
+  -- | Input
+  Text ->
+  Either TOMLError Value
 parseTOML filename input =
   case runParser parseTOMLDocument filename input of
     Left e -> Left $ ParseError $ Text.pack $ errorBundlePretty e

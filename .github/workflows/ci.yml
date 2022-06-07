@@ -1,5 +1,10 @@
 name: CI
-on: push
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
 
 jobs:
   build_and_test:
@@ -67,3 +72,18 @@ jobs:
           chmod +x /usr/local/bin/fourmolu
       - name: Run fourmolu
         run: fourmolu -m check $(git ls-files '*.hs')
+
+  check_sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v3
+        with:
+          path: ~/.stack
+          key: ${{ runner.os }}-check_sdist-${{ hashFiles('stack.yaml') }}
+      - name: Create sdist bundle
+        run: stack sdist --test-tarball --tar-dir .
+      - uses: actions/upload-artifact@v3
+        with:
+          name: toml-reader-sdist
+          path: toml-reader-*.tar.gz
