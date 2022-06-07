@@ -19,9 +19,6 @@ when:
       - -Wincomplete-record-updates
       - -Wincomplete-uni-patterns
       - -Wnoncanonical-monad-instances
-  - condition: impl(ghc < 8.8)
-    ghc-options:
-      - -Wnoncanonical-monadfail-instances
 
 library:
   source-dirs: src
@@ -40,7 +37,12 @@ tests:
     source-dirs: test/tasty
     dependencies:
       - base
+      - containers
       - tasty
+      - tasty-golden
+      - tasty-hunit
+      - text
+      - time
       - toml-reader
 
   parser-validator:

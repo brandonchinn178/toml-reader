@@ -38,12 +38,8 @@ jobs:
         with:
           path: ~/.stack
           key: ${{ runner.os }}-stack-cache-${{ hashFiles(matrix.stack_yaml, 'package.yaml') }}
-      - name: Build
-        run: stack build --test --no-run-tests
-      - name: Test
-        run: stack test :toml-reader-tests --coverage
-      - name: Test validator
-        run: stack test :parser-validator --coverage
+      - name: Build + test
+        run: stack test --coverage
 
       - name: Check that Cabal file was generated
         run: git diff --exit-code '*.cabal'
@@ -59,7 +55,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     env:
-      FOURMOLU_VERSION: '0.6.0.0'
+      FOURMOLU_VERSION: '0.7.0.1'
     steps:
       - uses: actions/checkout@v2
 

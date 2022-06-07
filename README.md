@@ -23,6 +23,6 @@ TODO
     c = 1
     ```
 
-    Since reading/writing isn't an idempotent operation, this library won't even pretend to provide `FromTOML`/`ToTOML` typeclasses that imply that they're inverses of each other.
+    Since reading/writing isn't an idempotent operation, this library won't even pretend to provide `DecodeTOML`/`EncodeTOML` typeclasses that imply that they're inverses of each other.
 
     Hopefully some other `toml-writer` library may come along to make it easy to specify how to format your data in TOML (e.g. a combinator for `table` vs `inlineTable`), or you could use [`tomland`](https://github.com/kowainik/tomland).

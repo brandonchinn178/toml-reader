@@ -30,7 +30,7 @@ import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
+import Data.Time (Day, LocalTime, TimeOfDay, TimeZone)
 import qualified Data.Time as Time
 import Data.Void (Void)
 import qualified Numeric
@@ -38,7 +38,9 @@ import Text.Megaparsec hiding (sepBy1)
 import Text.Megaparsec.Char hiding (space, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 
-import TOML.Internal (NormalizeError (..), TOMLError (..), Table, Value (..))
+import TOML.Error (NormalizeError (..), TOMLError (..))
+import TOML.Utils.Map (getPathLens)
+import TOML.Value (Table, Value (..))
 
 parseTOML :: String -> Text -> Either TOMLError Value
 parseTOML filename input =
@@ -54,7 +56,7 @@ data GenericValue map key tableMeta arrayMeta
   | GenericInteger Integer
   | GenericFloat Double
   | GenericBoolean Bool
-  | GenericOffsetDateTime UTCTime
+  | GenericOffsetDateTime (LocalTime, TimeZone)
   | GenericLocalDateTime LocalTime
   | GenericLocalDate Day
   | GenericLocalTime TimeOfDay
@@ -198,7 +200,8 @@ parseBasicString =
 parseLiteralString :: Parser Text
 parseLiteralString =
   label "single-quoted string" $
-    between (char '\'') (char '\'') $ takeWhileP (Just "literal-char") isLiteralChar
+    between (char '\'') (char '\'') $
+      takeWhileP (Just "literal-char") isLiteralChar
 
 -- | A multiline string with three double quotes.
 parseMultilineBasicString :: Parser Text
@@ -294,11 +297,8 @@ isLiteralChar c =
   where
     code = ord c
 
-parseOffsetDateTime :: Parser UTCTime
-parseOffsetDateTime = do
-  lt <- parseLocalDateTime
-  tz <- parseTimezone
-  return $ Time.localTimeToUTC tz lt
+parseOffsetDateTime :: Parser (LocalTime, TimeZone)
+parseOffsetDateTime = (,) <$> parseLocalDateTime <*> parseTimezone
   where
     parseTimezone =
       choice
@@ -335,8 +335,10 @@ parseLocalTime = do
   _ <- char ':'
   sInt <- parseSeconds
   sFracRaw <- optional $ fmap Text.pack $ char '.' >> some digitChar
-  let sFrac = MkFixed $ maybe 0 (readDec . truncateText 12) sFracRaw
+  let sFrac = MkFixed $ maybe 0 readPicoDigits sFracRaw
   return $ Time.TimeOfDay h m (fromIntegral sInt + sFrac)
+  where
+    readPicoDigits s = readDec $ Text.take 12 (s <> Text.replicate 12 "0")
 
 parseHours :: Parser Int
 parseHours = do
@@ -506,7 +508,7 @@ normalize' TOMLDoc{..} = do
 
 mergeTableSectionTable :: Key -> RawTable -> AnnTable -> NormalizeM AnnTable
 mergeTableSectionTable sectionKey table baseTable =
-  withValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
+  setValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
     tableToExtend <-
       case mVal of
         -- if a value doesn't already exist, initialize an empty Map
@@ -532,7 +534,7 @@ mergeTableSectionTable sectionKey table baseTable =
         table
 
     let newTableMeta = TableMeta{tableType = ExplicitSection}
-    pure $ Just $ GenericTable newTableMeta mergedTable
+    pure $ GenericTable newTableMeta mergedTable
   where
     valueAtPathOptions =
       ValueAtPathOptions
@@ -565,7 +567,7 @@ mergeTableSectionTable sectionKey table baseTable =
 
 mergeTableSectionArray :: Key -> RawTable -> AnnTable -> NormalizeM AnnTable
 mergeTableSectionArray sectionKey table baseTable = do
-  withValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
+  setValueAtPath valueAtPathOptions sectionKey baseTable $ \mVal -> do
     (meta, currArray) <-
       case mVal of
         -- if nothing exists, initialize an empty array
@@ -587,7 +589,7 @@ mergeTableSectionArray sectionKey table baseTable = do
 
     let newTableMeta = TableMeta{tableType = ExplicitSection}
     newTable <- GenericTable newTableMeta <$> flattenTable table
-    pure $ Just $ GenericArray meta $ currArray <> [newTable]
+    pure $ GenericArray meta $ currArray <> [newTable]
   where
     valueAtPathOptions =
       ValueAtPathOptions
@@ -630,8 +632,8 @@ mergeRawTable MergeOptions{..} baseTable table = foldlM insertRawValue baseTable
               , implicitType = ImplicitKey
               , makeMidPathNotTableError = nonTableInNestedKeyError key table
               }
-      withValueAtPath valueAtPathOptions key accTable $ \case
-        Nothing -> Just <$> fromRawValue rawValue
+      setValueAtPath valueAtPathOptions key accTable $ \case
+        Nothing -> fromRawValue rawValue
         Just existingValue ->
           normalizeError
             DuplicateKeyError
@@ -672,48 +674,40 @@ nonTableInNestedKeyError key table = \history existingValue ->
     , _originalValue = Table $ rawTableToApproxTable table
     }
 
-withValueAtPath ::
+setValueAtPath ::
   ValueAtPathOptions ->
   Key ->
   AnnTable ->
-  (Maybe AnnValue -> NormalizeM (Maybe AnnValue)) ->
+  (Maybe AnnValue -> NormalizeM AnnValue) ->
   NormalizeM AnnTable
-withValueAtPath ValueAtPathOptions{..} fullKey initialTable f = go Nothing fullKey initialTable
+setValueAtPath ValueAtPathOptions{..} fullKey initialTable f = do
+  (mValue, setValue) <- getPathLens doRecurse fullKey initialTable
+  setValue <$> f mValue
   where
-    go mHistory (k NonEmpty.:| ks) table = do
-      let kList = k NonEmpty.:| []
-          history = maybe kList (<> kList) mHistory
-      Map.alterF (handle history ks) k table
-    handle history ks mVal =
-      case NonEmpty.nonEmpty ks of
-        -- when we're at the last key
-        Nothing -> f mVal
-        -- when we want to keep recursing ...
-        Just ks' -> fmap Just $ do
-          let go' = go (Just history) ks'
-          case mVal of
-            -- ... and nothing exists, recurse into a new empty Map
-            Nothing -> do
-              let newTableMeta = TableMeta{tableType = implicitType}
-              GenericTable newTableMeta <$> go' Map.empty
-            -- ... and a Table exists, recurse into it
-            Just (GenericTable meta subTable) -> do
-              unless (shouldRecurse $ tableType meta) $
-                normalizeError
-                  ExtendTableError
-                    { _path = history
-                    , _originalKey = fullKey
-                    }
-              GenericTable meta <$> go' subTable
-            -- ... and Array exists, recurse into the last Table, per spec:
-            --   Any reference to an array of tables points to the
-            --   most recently defined table element of the array.
-            Just (GenericArray aMeta vs)
-              | Just vs' <- NonEmpty.nonEmpty vs
-              , GenericTable tMeta subTable <- NonEmpty.last vs' ->
-                  GenericArray aMeta . snoc (NonEmpty.init vs') . GenericTable tMeta <$> go' subTable
-            -- ... and something else exists, throw error with makeMidPathNotTableError
-            Just v -> normalizeError $ makeMidPathNotTableError history v
+    doRecurse history = \case
+      -- If nothing exists, recurse into a new empty Map
+      Nothing -> do
+        let newTableMeta = TableMeta{tableType = implicitType}
+        pure (Map.empty, GenericTable newTableMeta)
+      -- If a Table exists, recurse into it
+      Just (GenericTable meta subTable) -> do
+        unless (shouldRecurse $ tableType meta) $
+          normalizeError
+            ExtendTableError
+              { _path = history
+              , _originalKey = fullKey
+              }
+        pure (subTable, GenericTable meta)
+      -- If an Array exists, recurse into the last Table, per spec:
+      --   Any reference to an array of tables points to the
+      --   most recently defined table element of the array.
+      Just (GenericArray aMeta vs)
+        | Just vs' <- NonEmpty.nonEmpty vs
+        , GenericTable tMeta subTable <- NonEmpty.last vs' ->
+            pure (subTable, GenericArray aMeta . snoc (NonEmpty.init vs') . GenericTable tMeta)
+      -- If something else exists, throw error with makeMidPathNotTableError
+      Just v -> normalizeError $ makeMidPathNotTableError history v
+
     snoc xs x = xs <> [x]
 
 -- | Convert a RawTable into a Table, for use in errors + debugging.
@@ -771,7 +765,7 @@ hsymbol s = hspace >> string s >> hspace >> pure ()
 
 -- | Parse trailing whitespace/trailing comments + newline
 endOfLine :: Parser ()
-endOfLine = L.space hspace1 skipComments empty >> eol >> pure ()
+endOfLine = L.space hspace1 skipComments empty >> (void eol <|> eof) >> pure ()
 
 -- | Parse spaces, newlines, and comments
 emptyLines :: Parser ()
@@ -816,12 +810,6 @@ exactly :: Int -> Char -> Parser Text
 exactly n c = try $ Text.pack <$> count n (char c) <* notFollowedBy (char c)
 
 {--- Read Helpers ---}
-
-truncateText :: Int -> Text -> Text
-truncateText n t =
-  case Text.chunksOf n t of
-    [] -> ""
-    t' : _ -> t'
 
 -- | Assumes string satisfies @all isDigit@.
 readFloat :: (Show a, RealFrac a) => Text -> a

@@ -1,66 +1,28 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module TOML.Internal (
-  Value (..),
-  renderValue,
-  Table,
+module TOML.Error (
   TOMLError (..),
   NormalizeError (..),
+  DecodeContext,
+  ContextItem (..),
+  DecodeError (..),
   renderTOMLError,
 ) where
 
-import Control.DeepSeq (NFData)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
-import GHC.Generics (Generic)
 
-type Table = Map Text Value
-
-data Value
-  = Table Table
-  | Array [Value]
-  | String Text
-  | Integer Integer
-  | Float Double
-  | Boolean Bool
-  | OffsetDateTime UTCTime
-  | LocalDateTime LocalTime
-  | LocalDate Day
-  | LocalTime TimeOfDay
-  deriving (Show, Eq, Generic, NFData)
-
--- | Render a Value in pseudo-JSON format.
-renderValue :: Value -> Text
-renderValue = \case
-  Table kvs -> "{" <> Text.intercalate ", " (map renderKeyValue $ Map.toList kvs) <> "}"
-  Array vs -> "[" <> Text.intercalate ", " (map renderValue vs) <> "]"
-  String s -> showT s
-  Integer x -> showT x
-  Float x -> showT x
-  Boolean b -> showT b
-  OffsetDateTime x -> showT x
-  LocalDateTime x -> showT x
-  LocalDate x -> showT x
-  LocalTime x -> showT x
-  where
-    renderKeyValue (k, v) = showT k <> ": " <> renderValue v
-
-    showT :: Show a => a -> Text
-    showT = Text.pack . show
+import TOML.Value (Table, Value (..), renderValue)
 
 data TOMLError
   = ParseError Text
   | NormalizeError NormalizeError
-  deriving (Show)
+  | DecodeError DecodeContext DecodeError
+  deriving (Show, Eq)
 
 data NormalizeError
   = -- | When a key is defined twice, e.g.
@@ -142,7 +104,19 @@ data NormalizeError
       , _sectionKey :: NonEmpty Text
       , _tableSection :: Table
       }
-  deriving (Show)
+  deriving (Show, Eq)
+
+type DecodeContext = [ContextItem]
+
+data ContextItem = Key Text | Index Int
+  deriving (Show, Eq)
+
+data DecodeError
+  = MissingField
+  | InvalidValue Text Value
+  | TypeMismatch Value
+  | OtherDecodeError Text
+  deriving (Show, Eq)
 
 renderTOMLError :: TOMLError -> Text
 renderTOMLError = \case
@@ -177,5 +151,17 @@ renderTOMLError = \case
       , "  Existing value: " <> renderValue _existingValue
       , "  Array table section: " <> renderValue (Table _tableSection)
       ]
+  DecodeError ctx e -> "Decode error at '" <> renderDecodeContext ctx <> "': " <> renderDecodeError e
   where
     showPath path = "\"" <> Text.intercalate "." (NonEmpty.toList path) <> "\""
+
+    renderDecodeError = \case
+      MissingField -> "Field does not exist"
+      InvalidValue msg v -> "Invalid value: " <> msg <> ": " <> renderValue v
+      TypeMismatch v -> "Type mismatch, got: " <> renderValue v
+      OtherDecodeError msg -> msg
+
+    renderDecodeContext = Text.concat . map renderContextItem
+    renderContextItem = \case
+      Key k -> "." <> k
+      Index i -> "[" <> Text.pack (show i) <> "]"

@@ -10,6 +10,7 @@ import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
+import Data.Time (ZonedTime (..))
 import qualified Data.Vector as Vector
 import System.Directory (findExecutable)
 import System.Environment (getArgs, getExecutablePath)
@@ -31,7 +32,7 @@ import qualified Data.HashMap.Lazy as HashMap
 #if MIN_VERSION_time(1,9,0)
 import Data.Time.Format.ISO8601 (iso8601Show)
 #else
-import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
+import Data.Time (Day, LocalTime, TimeOfDay)
 import Data.Time.Format (defaultTimeLocale, formatTime, iso8601DateFormat)
 #endif
 
@@ -70,7 +71,7 @@ toTaggedJSON = \case
   Integer x -> tagged "integer" (show x)
   Float x -> tagged "float" (showFloat x)
   Boolean x -> tagged "bool" $ if x then "true" else "false"
-  OffsetDateTime x -> tagged "datetime" $ iso8601Show x
+  OffsetDateTime (lt, tz) -> tagged "datetime" $ iso8601Show (ZonedTime lt tz)
   LocalDateTime x -> tagged "datetime-local" $ iso8601Show x
   LocalDate x -> tagged "date-local" $ iso8601Show x
   LocalTime x -> tagged "time-local" $ iso8601Show x
@@ -94,7 +95,7 @@ toKeyMap = HashMap.fromList . Map.toList
 #if !MIN_VERSION_time(1,9,0)
 class ISO8601 a where
   iso8601Show :: a -> String
-instance ISO8601 UTCTime where
+instance ISO8601 ZonedTime where
   iso8601Show = formatTime defaultTimeLocale (iso8601DateFormat $ Just "%T%Q%Z")
 instance ISO8601 LocalTime where
   iso8601Show = formatTime defaultTimeLocale (iso8601DateFormat $ Just "%T%Q")
