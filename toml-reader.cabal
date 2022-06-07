@@ -16,6 +16,18 @@ license:        BSD3
 build-type:     Simple
 extra-source-files:
     README.md
+    test/tasty/goldens/renderTOMLError/DecodeError.InvalidValue.golden
+    test/tasty/goldens/renderTOMLError/DecodeError.MissingField.golden
+    test/tasty/goldens/renderTOMLError/DecodeError.OtherDecodeError.golden
+    test/tasty/goldens/renderTOMLError/DecodeError.TypeMismatch.golden
+    test/tasty/goldens/renderTOMLError/NormalizeError.DuplicateKeyError.golden
+    test/tasty/goldens/renderTOMLError/NormalizeError.DuplicateSectionError.golden
+    test/tasty/goldens/renderTOMLError/NormalizeError.ExtendTableError.golden
+    test/tasty/goldens/renderTOMLError/NormalizeError.ExtendTableInInlineArrayError.golden
+    test/tasty/goldens/renderTOMLError/NormalizeError.ImplicitArrayForDefinedKeyError.golden
+    test/tasty/goldens/renderTOMLError/NormalizeError.NonTableInNestedImplicitArrayError.golden
+    test/tasty/goldens/renderTOMLError/NormalizeError.NonTableInNestedKeyError.golden
+    test/tasty/goldens/renderTOMLError/ParseError.golden
 
 source-repository head
   type: git
