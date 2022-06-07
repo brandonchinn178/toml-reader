@@ -38,12 +38,8 @@ jobs:
         with:
           path: ~/.stack
           key: ${{ runner.os }}-stack-cache-${{ hashFiles(matrix.stack_yaml, 'package.yaml') }}
-      - name: Build
-        run: stack build --test --no-run-tests --coverage
-      - name: Test
-        run: stack test :toml-reader-tests --coverage
-      - name: Test validator
-        run: stack test :parser-validator --coverage
+      - name: Build + test
+        run: stack test --coverage
 
       - name: Check that Cabal file was generated
         run: git diff --exit-code '*.cabal'
