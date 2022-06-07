@@ -16,7 +16,7 @@ module TOML.Parser (
   parseTOML,
 ) where
 
-import Control.Monad (guard, unless, void)
+import Control.Monad (guard, unless, void, when)
 import Control.Monad.Combinators.NonEmpty (sepBy1)
 import Data.Bifunctor (bimap)
 import Data.Char (chr, isDigit, isSpace, ord)
@@ -703,7 +703,10 @@ setValueAtPath ValueAtPathOptions{..} fullKey initialTable f = do
       --   most recently defined table element of the array.
       Just (GenericArray aMeta vs)
         | Just vs' <- NonEmpty.nonEmpty vs
-        , GenericTable tMeta subTable <- NonEmpty.last vs' ->
+        , GenericTable tMeta subTable <- NonEmpty.last vs' -> do
+            when (isStaticArray aMeta) $
+              normalizeError $
+                ExtendTableInInlineArrayError history fullKey
             pure (subTable, GenericArray aMeta . snoc (NonEmpty.init vs') . GenericTable tMeta)
       -- If something else exists, throw error with makeMidPathNotTableError
       Just v -> normalizeError $ makeMidPathNotTableError history v

@@ -25,7 +25,7 @@ jobs:
 
       - name: Install toml-test
         env:
-          TOML_TEST_VERSION: '1.1.0'
+          TOML_TEST_VERSION: '1.2.0'
         run: |
           curl -sSL \
             "https://github.com/BurntSushi/toml-test/releases/download/v${TOML_TEST_VERSION}/toml-test-v${TOML_TEST_VERSION}-linux-amd64.gz" \
