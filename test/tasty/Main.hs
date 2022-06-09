@@ -2,6 +2,7 @@ import Test.Tasty
 
 import qualified TOML.DecodeTest
 import qualified TOML.ErrorTest
+import qualified TOML.ParserTest
 import qualified TOML.Utils.MapTest
 import qualified TOML.Utils.NonEmptyTest
 
@@ -12,5 +13,6 @@ main =
       [ TOML.Utils.MapTest.test
       , TOML.Utils.NonEmptyTest.test
       , TOML.ErrorTest.test
+      , TOML.ParserTest.test
       , TOML.DecodeTest.test
       ]
