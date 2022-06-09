@@ -20,7 +20,7 @@ data Value
   | Array [Value]
   | String Text
   | Integer Integer
-  | Float Double
+  | Float Double -- TOML spec specifies this must be a double precision float: https://github.com/toml-lang/toml/issues/538
   | Boolean Bool
   | OffsetDateTime (LocalTime, TimeZone)
   | LocalDateTime LocalTime
