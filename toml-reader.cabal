@@ -91,6 +91,7 @@ test-suite toml-reader-tests
   other-modules:
       TOML.DecodeTest
       TOML.ErrorTest
+      TOML.ParserTest
       TOML.Utils.MapTest
       TOML.Utils.NonEmptyTest
       Paths_toml_reader

@@ -382,7 +382,13 @@ parseFloat = do
           [ try $ (,) <$> pure "" <*> parseExp
           , (,) <$> parseFrac <*> optionalOr "" parseExp
           ]
-      pure $ readFloat $ intPart <> fracPart <> expPart
+
+      -- guess if the exponent is too big to fit in a double precision float anyway.
+      -- https://github.com/brandonchinn178/toml-reader/issues/8
+      pure $
+        if Text.length expPart > 7
+          then inf
+          else readFloat $ intPart <> fracPart <> expPart
 
     parseExp =
       fmap Text.concat . sequence $
