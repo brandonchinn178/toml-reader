@@ -19,6 +19,7 @@ import TOML.Decode (
   getField,
   getFieldOpt,
   getFieldOptWith,
+  getFieldOr,
   getFieldWith,
   getFields,
   getFieldsOpt,
@@ -50,6 +51,15 @@ getFieldTests =
           decodeWith (getField @Int "a") "" @?= Left (DecodeError [Key "a"] MissingField)
       , testCase "errors if field is the wrong type" $
           decodeWith (getField @Int "a") "a = true" @?= Left (DecodeError [Key "a"] (TypeMismatch (Boolean True)))
+      ]
+  , testGroup
+      "getFieldOr"
+      [ testCase "decodes field" $
+          decodeWith (getFieldOr @Int 42 "a") "a = 1" @?= Right 1
+      , testCase "returns default if field does not exist" $
+          decodeWith (getFieldOr @Int 42 "a") "" @?= Right 42
+      , testCase "errors if field is the wrong type" $
+          decodeWith (getFieldOr @Int 42 "a") "a = true" @?= Left (DecodeError [Key "a"] (TypeMismatch (Boolean True)))
       ]
   , testGroup
       "getFieldOpt"
