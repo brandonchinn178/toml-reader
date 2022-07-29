@@ -20,6 +20,7 @@ module TOML.Decode (
 
   -- ** Decoder getters
   getField,
+  getFieldOr,
   getFields,
   getFieldOpt,
   getFieldsOpt,
@@ -57,6 +58,7 @@ import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 import qualified Data.Monoid as Monoid
 import Data.Proxy (Proxy (..))
 import Data.Ratio (Ratio)
@@ -278,6 +280,22 @@ MyConfig \<$> getField "a" \<*> getField "b"
 -}
 getField :: DecodeTOML a => Text -> Decoder a
 getField = getFieldWith tomlDecoder
+
+{- |
+Decode a field in a TOML Value or succeed with a default value when the field is missing.
+
+@
+a = 1
+# b is missing
+@
+
+@
+-- MyConfig 1 "asdf"
+MyConfig \<$> getFieldOr 42 "a" \<*> getFieldOr "asdf" "b"
+@
+-}
+getFieldOr :: DecodeTOML a => a -> Text -> Decoder a
+getFieldOr def key = fromMaybe def <$> getFieldOpt key
 
 -- | Same as 'getField', except with the given 'Decoder'.
 getFieldWith :: Decoder a -> Text -> Decoder a
