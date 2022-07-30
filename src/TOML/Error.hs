@@ -11,6 +11,7 @@ module TOML.Error (
   renderTOMLError,
 ) where
 
+import Control.Exception (Exception (..))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Text (Text)
@@ -23,6 +24,9 @@ data TOMLError
   | NormalizeError NormalizeError
   | DecodeError DecodeContext DecodeError
   deriving (Show, Eq)
+
+instance Exception TOMLError where
+  displayException = Text.unpack . renderTOMLError
 
 data NormalizeError
   = -- | When a key is defined twice, e.g.
