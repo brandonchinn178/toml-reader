@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.35.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -57,9 +57,9 @@ library
     , parser-combinators >=1.1.0 && <1.4
     , text >=1.2.3.1 && <2.1
     , time >=1.8.0.2 && <1.12
+  default-language: Haskell2010
   if impl(ghc >= 8.0)
     ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
-  default-language: Haskell2010
 
 test-suite parser-validator
   type: exitcode-stdio-1.0
@@ -81,9 +81,9 @@ test-suite parser-validator
     , toml-reader
     , unordered-containers
     , vector
+  default-language: Haskell2010
   if impl(ghc >= 8.0)
     ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
-  default-language: Haskell2010
 
 test-suite toml-reader-tests
   type: exitcode-stdio-1.0
@@ -107,6 +107,6 @@ test-suite toml-reader-tests
     , text
     , time
     , toml-reader
+  default-language: Haskell2010
   if impl(ghc >= 8.0)
     ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
-  default-language: Haskell2010
