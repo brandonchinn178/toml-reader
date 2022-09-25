@@ -8,6 +8,7 @@ module TOML (
 
   -- ** Decoding getters
   getField,
+  getFieldOr,
   getFields,
   getFieldOpt,
   getFieldsOpt,
