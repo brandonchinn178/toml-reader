@@ -9,10 +9,14 @@ TOML format parser compliant with [v1.0.0](https://toml.io/en/v1.0.0) (verified 
 ## Usage
 
 ```hs
+{-# LANGUAGE OverloadedStrings #-}
+
+import TOML (DecodeTOML, tomlDecoder, getField, decodeFile)
+
 data MyConfig = MyConfig
   { field1 :: Int
   , field2 :: Bool
-  }
+  } deriving (Show)
 
 instance DecodeTOML MyConfig where
   tomlDecoder =
