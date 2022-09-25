@@ -32,7 +32,7 @@ library:
     - megaparsec >= 7.0.5 && < 9.3
     - parser-combinators >= 1.1.0 && < 1.4
     - text >= 1.2.3.1 && < 2.1
-    - time >= 1.8.0.2 && < 1.12
+    - time >= 1.8.0.2 && < 1.13
 
 tests:
   toml-reader-tests:
