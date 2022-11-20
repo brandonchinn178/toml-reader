@@ -1,0 +1,4 @@
+resolver: nightly-2022-11-19
+
+ghc-options:
+  '$locals': -Werror
