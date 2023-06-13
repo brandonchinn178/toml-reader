@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.0.
+-- This file has been generated from package.yaml by hpack version 0.35.2.
 --
 -- see: https://github.com/sol/hpack
 
@@ -53,7 +53,7 @@ library
   build-depends:
       base >=4.9 && <5
     , containers >=0.6.0.1 && <0.7
-    , megaparsec >=7.0.5 && <9.4
+    , megaparsec >=7.0.5 && <9.5
     , parser-combinators >=1.1.0 && <1.4
     , text >=1.2.3.1 && <2.1
     , time >=1.8.0.2 && <1.13
