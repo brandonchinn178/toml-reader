@@ -57,6 +57,9 @@ jobs:
           - '9.2'
           - '9.4'
           - '9.6'
+        include:
+          - ghc_version: '9.0'
+            oldest: true
 
     name: ghc_compat_test (${{ matrix.ghc_version }})
     runs-on: ubuntu-latest
@@ -83,6 +86,10 @@ jobs:
           cabal configure
             --enable-test
             --test-show-details=streaming
+      -
+        if: ${{ matrix.oldest }}
+        name: Use oldest dependencies
+        run: cabal configure --enable-append --prefer-oldest
       -
         name: Get build plan
         run: cabal build --dry-run
