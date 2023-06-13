@@ -6,54 +6,36 @@ on:
       - main
   workflow_call:
 
+env:
+  TOML_TEST_VERSION: '1.2.0'
+
 jobs:
   build_and_test:
-    strategy:
-      matrix:
-        stack_yaml:
-          - stack-ghc-8.6.yaml
-          - stack-ghc-8.8.yaml
-          - stack-ghc-8.10.yaml
-          - stack-ghc-9.0.yaml
-          - stack-ghc-9.2.yaml
-          - stack-ghc-9.4.yaml
-        include:
-          - stack_yaml: stack.yaml
-            latest: true
-
-    name: build_and_test (${{ matrix.stack_yaml }})
-    runs-on: ubuntu-22.04
-    env:
-      STACK_YAML: ${{ matrix.stack_yaml }}
+    name: build_and_test
+    runs-on: ubuntu-latest
 
     steps:
       -
         uses: actions/checkout@v3
       -
         name: Install toml-test
-        env:
-          TOML_TEST_VERSION: '1.2.0'
         run: |
-          curl -sSL \
-            "https://github.com/BurntSushi/toml-test/releases/download/v${TOML_TEST_VERSION}/toml-test-v${TOML_TEST_VERSION}-linux-amd64.gz" \
-            -o toml-test.gz
-          gunzip toml-test.gz
-          chmod +x toml-test
-          mv toml-test /usr/local/bin/
+          curl -fsSL "https://github.com/BurntSushi/toml-test/releases/download/v${TOML_TEST_VERSION}/toml-test-v${TOML_TEST_VERSION}-linux-amd64.gz" \
+            | gunzip \
+            > /usr/local/bin/toml-test
+          chmod +x /usr/local/bin/toml-test
       -
         uses: actions/cache@v3
         with:
           path: ~/.stack
-          key: ${{ runner.os }}-stack-cache-${{ hashFiles(matrix.stack_yaml, 'package.yaml') }}
+          key: ${{ runner.os }}-stack-cache-${{ hashFiles('stack.yaml', 'package.yaml') }}
       -
         name: Build + test
         run: stack test --coverage
       -
         name: Check that Cabal file was generated
         run: git diff --exit-code '*.cabal'
-      # upload coverage data
       -
-        if: ${{ matrix.latest }}
         name: Generate coverage data
         run: |
           HPC_LCOV_VERSION=1.1.1
@@ -63,10 +45,62 @@ jobs:
           chmod +x /usr/local/bin/hpc-lcov
           hpc-lcov
       -
-        if: ${{ matrix.latest }}
         uses: codecov/codecov-action@v2
         with:
           files: lcov.info
+
+  ghc_compat_test:
+    strategy:
+      matrix:
+        ghc_version:
+          - '8.6'
+          - '8.8'
+          - '8.10'
+          - '9.0'
+          - '9.2'
+          - '9.4'
+
+    name: ghc_compat_test (${{ matrix.ghc_version }})
+    runs-on: ubuntu-latest
+
+    steps:
+      -
+        uses: actions/checkout@v3
+      -
+        name: Install toml-test
+        run: |
+          curl -fsSL "https://github.com/BurntSushi/toml-test/releases/download/v${TOML_TEST_VERSION}/toml-test-v${TOML_TEST_VERSION}-linux-amd64.gz" \
+            | gunzip \
+            > /usr/local/bin/toml-test
+          chmod +x /usr/local/bin/toml-test
+      -
+        id: setup
+        name: Set up GHC ${{ matrix.ghc_version }}
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc_version }}
+      -
+        name: Configure the build
+        run:
+          cabal configure
+            --enable-test
+            --test-show-details=streaming
+      -
+        name: Get build plan
+        run: cabal build --dry-run
+      -
+        name: Get current month to clear cache
+        run: echo "CURR_MONTH=$(date +%B)" | tee -a "$GITHUB_ENV"
+      -
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ runner.os }}-cabal-cache-${{ env.CURR_MONTH }}-${{ matrix.ghc_version }}-${{ hashFiles('**/plan.json') }}
+          restore-keys: |
+               ${{ runner.os }}-cabal-cache-${{ env.CURR_MONTH }}-${{ matrix.ghc_version }}-
+      -
+        name: Build + Test
+        run: cabal test
 
   lint:
     runs-on: ubuntu-latest
