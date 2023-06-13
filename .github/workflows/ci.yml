@@ -53,13 +53,20 @@ jobs:
         run: git diff --exit-code '*.cabal'
       # upload coverage data
       -
+        if: ${{ matrix.latest }}
         name: Generate coverage data
-        run: stack install hpc-lcov && hpc-lcov
+        run: |
+          HPC_LCOV_VERSION=1.1.1
+          curl -fsSL \
+            "https://github.com/brandonchinn178/hpc-lcov/releases/download/v${HPC_LCOV_VERSION}/hpc-lcov-${HPC_LCOV_VERSION}-linux-x86_64" \
+            -o /usr/local/bin/hpc-lcov
+          chmod +x /usr/local/bin/hpc-lcov
+          hpc-lcov
       -
+        if: ${{ matrix.latest }}
         uses: codecov/codecov-action@v2
         with:
           files: lcov.info
-        if: ${{ matrix.latest }}
 
   lint:
     runs-on: ubuntu-latest
