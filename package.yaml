@@ -1,5 +1,5 @@
 name: toml-reader
-version: 0.2.0.0
+version: 0.2.1.0
 category: TOML, Text, Configuration
 synopsis: TOML format parser compliant with v1.0.0.
 description: TOML format parser compliant with v1.0.0. See README.md for more details.
@@ -15,24 +15,23 @@ extra-source-files:
 
 github: brandonchinn178/toml-reader
 
-ghc-options: -Wall
-when:
-  - condition: impl(ghc >= 8.0)
-    ghc-options:
-      - -Wcompat
-      - -Wincomplete-record-updates
-      - -Wincomplete-uni-patterns
-      - -Wnoncanonical-monad-instances
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wnoncanonical-monad-instances
+  - -Wunused-packages
 
 library:
   source-dirs: src
   dependencies:
-    - base >= 4.9 && < 5
-    - containers >= 0.6.0.1 && < 0.7
-    - megaparsec >= 7.0.5 && < 9.4
-    - parser-combinators >= 1.1.0 && < 1.4
-    - text >= 1.2.3.1 && < 2.1
-    - time >= 1.8.0.2 && < 1.13
+    - base >= 4.15 && < 5
+    - containers < 0.7
+    - megaparsec < 9.5
+    - parser-combinators < 1.4
+    - text < 2.1
+    - time < 1.13
 
 tests:
   toml-reader-tests:

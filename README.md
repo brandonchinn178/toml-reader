@@ -1,6 +1,6 @@
 # toml-reader
 
-[![](https://img.shields.io/github/workflow/status/brandonchinn178/toml-reader/CI/main)](https://github.com/brandonchinn178/toml-reader/actions)
+[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/brandonchinn178/toml-reader/ci.yml?branch=main)](https://github.com/brandonchinn178/toml-reader/actions?query=branch%3Amain)
 [![](https://img.shields.io/codecov/c/gh/brandonchinn178/toml-reader)](https://app.codecov.io/gh/brandonchinn178/toml-reader)
 [![](https://img.shields.io/hackage/v/toml-reader)](https://hackage.haskell.org/package/toml-reader)
 

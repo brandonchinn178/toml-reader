@@ -1,5 +1,9 @@
 ## Unreleased
 
+## v0.2.1.0
+
+* Drop support for GHC < 9.0
+
 ## v0.2.0.0
 
 * Add getFieldOr [#10](https://github.com/brandonchinn178/toml-reader/issues/10)

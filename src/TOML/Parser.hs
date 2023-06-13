@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 
-{- |
+{-|
 Parse a TOML document.
 
 References:
@@ -44,11 +44,11 @@ import TOML.Utils.Map (getPathLens)
 import TOML.Value (Table, Value (..))
 
 parseTOML ::
-  -- | Name of file (for error messages)
-  String ->
-  -- | Input
-  Text ->
-  Either TOMLError Value
+  String
+  -- ^ Name of file (for error messages)
+  -> Text
+  -- ^ Input
+  -> Either TOMLError Value
 parseTOML filename input =
   case runParser parseTOMLDocument filename input of
     Left e -> Left $ ParseError $ Text.pack $ errorBundlePretty e
@@ -68,9 +68,9 @@ data GenericValue map key tableMeta arrayMeta
   | GenericLocalTime TimeOfDay
 
 fromGenericValue ::
-  (map key (GenericValue map key tableMeta arrayMeta) -> Table) ->
-  GenericValue map key tableMeta arrayMeta ->
-  Value
+  (map key (GenericValue map key tableMeta arrayMeta) -> Table)
+  -> GenericValue map key tableMeta arrayMeta
+  -> Value
 fromGenericValue fromGenericTable = \case
   GenericTable _ t -> Table $ fromGenericTable t
   GenericArray _ vs -> Array $ map (fromGenericValue fromGenericTable) vs
@@ -261,13 +261,12 @@ parseEscaped = char '\\' *> parseEscapedChar
       guard $ isUnicodeScalar code
       pure $ chr code
 
-{- |
-Parse the multiline delimiter (" in """ quotes, or ' in ''' quotes), unless
-the delimiter indicates the end of the multiline string.
-
-i.e. parse 1 or 2 delimiters, or 4 or 5, which is 1 or 2 delimiters at the
-end of a multiline string (then backtrack 3 to mark the end).
--}
+-- |
+-- Parse the multiline delimiter (" in """ quotes, or ' in ''' quotes), unless
+-- the delimiter indicates the end of the multiline string.
+--
+-- i.e. parse 1 or 2 delimiters, or 4 or 5, which is 1 or 2 delimiters at the
+-- end of a multiline string (then backtrack 3 to mark the end).
 parseMultilineDelimiter :: Char -> Parser Text
 parseMultilineDelimiter delim =
   choice
@@ -687,11 +686,11 @@ nonTableInNestedKeyError key table = \history existingValue ->
     }
 
 setValueAtPath ::
-  ValueAtPathOptions ->
-  Key ->
-  AnnTable ->
-  (Maybe AnnValue -> NormalizeM AnnValue) ->
-  NormalizeM AnnTable
+  ValueAtPathOptions
+  -> Key
+  -> AnnTable
+  -> (Maybe AnnValue -> NormalizeM AnnValue)
+  -> NormalizeM AnnTable
 setValueAtPath ValueAtPathOptions{..} fullKey initialTable f = do
   (mValue, setValue) <- getPathLens doRecurse fullKey initialTable
   setValue <$> f mValue
@@ -752,7 +751,7 @@ isUnicodeScalar code = (0x0 <= code && code <= 0xD7FF) || (0xE000 <= code && cod
 parseSignRaw :: Parser Text
 parseSignRaw = optionalOr "" (string "-" <|> string "+")
 
-parseSign :: Num a => Parser (a -> a)
+parseSign :: (Num a) => Parser (a -> a)
 parseSign = do
   sign <- parseSignRaw
   pure $ if sign == "-" then negate else id
@@ -853,7 +852,7 @@ readBin = foldl' go 0 . Text.unpack
             | otherwise = error $ "readBin got unexpected digit: " <> show x
        in 2 * acc + digit
 
-runReader :: Show a => ReadS a -> Text -> a
+runReader :: (Show a) => ReadS a -> Text -> a
 runReader rdr digits =
   case rdr $ Text.unpack digits of
     [(x, "")] -> x

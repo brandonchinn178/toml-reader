@@ -23,9 +23,9 @@ data MapOrInt = Map [(String, MapOrInt)] | Int Int
   deriving (Show, Eq)
 
 recurseMapOrInt ::
-  NonEmpty String ->
-  Maybe MapOrInt ->
-  Either String (Map String MapOrInt, Map String MapOrInt -> MapOrInt)
+  NonEmpty String
+  -> Maybe MapOrInt
+  -> Either String (Map String MapOrInt, Map String MapOrInt -> MapOrInt)
 recurseMapOrInt _ = \case
   Nothing -> Right (Map.empty, fromMap)
   Just (Map kvs) -> Right (Map.fromList kvs, fromMap)
