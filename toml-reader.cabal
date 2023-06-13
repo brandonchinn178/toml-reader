@@ -49,7 +49,7 @@ library
       Paths_toml_reader
   hs-source-dirs:
       src
-  ghc-options: -Wall
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
   build-depends:
       base >=4.9 && <5
     , containers >=0.6.0.1 && <0.7
@@ -58,8 +58,6 @@ library
     , text >=1.2.3.1 && <2.1
     , time >=1.8.0.2 && <1.13
   default-language: Haskell2010
-  if impl(ghc >= 8.0)
-    ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
 
 test-suite parser-validator
   type: exitcode-stdio-1.0
@@ -68,7 +66,7 @@ test-suite parser-validator
       Paths_toml_reader
   hs-source-dirs:
       test/toml-test
-  ghc-options: -Wall
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
   build-depends:
       aeson
     , base
@@ -82,8 +80,6 @@ test-suite parser-validator
     , unordered-containers
     , vector
   default-language: Haskell2010
-  if impl(ghc >= 8.0)
-    ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
 
 test-suite toml-reader-tests
   type: exitcode-stdio-1.0
@@ -97,7 +93,7 @@ test-suite toml-reader-tests
       Paths_toml_reader
   hs-source-dirs:
       test/tasty
-  ghc-options: -Wall
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
   build-depends:
       base
     , containers
@@ -108,5 +104,3 @@ test-suite toml-reader-tests
     , time
     , toml-reader
   default-language: Haskell2010
-  if impl(ghc >= 8.0)
-    ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
