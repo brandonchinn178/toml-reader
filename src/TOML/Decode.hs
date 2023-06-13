@@ -246,7 +246,7 @@ addContextItem p m = DecodeM $ \ctx -> unDecodeM m (ctx <> [p])
 {--- Decoding ---}
 
 -- | Decode the given TOML input.
-decode :: DecodeTOML a => Text -> Either TOMLError a
+decode :: (DecodeTOML a) => Text -> Either TOMLError a
 decode = decodeWith tomlDecoder
 
 -- | Decode the given TOML input using the given 'Decoder'.
@@ -259,7 +259,7 @@ decodeWithOpts decoder filename input = do
   first (uncurry DecodeError) $ decoderToEither decoder v []
 
 -- | Decode a TOML file at the given file path.
-decodeFile :: DecodeTOML a => FilePath -> IO (Either TOMLError a)
+decodeFile :: (DecodeTOML a) => FilePath -> IO (Either TOMLError a)
 decodeFile fp = decodeWithOpts tomlDecoder fp <$> Text.readFile fp
 
 {--- Decoder helpers ---}
@@ -278,7 +278,7 @@ b = 'asdf'
 MyConfig \<$> getField "a" \<*> getField "b"
 @
 -}
-getField :: DecodeTOML a => Text -> Decoder a
+getField :: (DecodeTOML a) => Text -> Decoder a
 getField = getFieldWith tomlDecoder
 
 {- |
@@ -294,7 +294,7 @@ a = 1
 MyConfig \<$> getFieldOr 42 "a" \<*> getFieldOr "asdf" "b"
 @
 -}
-getFieldOr :: DecodeTOML a => a -> Text -> Decoder a
+getFieldOr :: (DecodeTOML a) => a -> Text -> Decoder a
 getFieldOr def key = fromMaybe def <$> getFieldOpt key
 
 -- | Same as 'getField', except with the given 'Decoder'.
@@ -314,7 +314,7 @@ a = 1
 MyConfig \<$> getFieldOpt "a" \<*> getFieldOpt "b"
 @
 -}
-getFieldOpt :: DecodeTOML a => Text -> Decoder (Maybe a)
+getFieldOpt :: (DecodeTOML a) => Text -> Decoder (Maybe a)
 getFieldOpt = getFieldOptWith tomlDecoder
 
 -- | Same as 'getFieldOpt', except with the given 'Decoder'.
@@ -333,7 +333,7 @@ a.b = 1
 MyConfig \<$> getFields ["a", "b"]
 @
 -}
-getFields :: DecodeTOML a => [Text] -> Decoder a
+getFields :: (DecodeTOML a) => [Text] -> Decoder a
 getFields = getFieldsWith tomlDecoder
 
 -- | Same as 'getFields', except with the given 'Decoder'.
@@ -365,7 +365,7 @@ MyConfig
   \<*> getFieldsOpt ["b", "c"]
 @
 -}
-getFieldsOpt :: DecodeTOML a => [Text] -> Decoder (Maybe a)
+getFieldsOpt :: (DecodeTOML a) => [Text] -> Decoder (Maybe a)
 getFieldsOpt = getFieldsOptWith tomlDecoder
 
 -- | Same as 'getFieldsOpt', except with the given 'Decoder'.
@@ -428,7 +428,7 @@ instance DecodeTOML Integer where
       Integer x -> pure x
       v -> typeMismatch v
 
-tomlDecoderInt :: forall a. Num a => Decoder a
+tomlDecoderInt :: forall a. (Num a) => Decoder a
 tomlDecoderInt = fromInteger <$> tomlDecoder
 
 tomlDecoderBoundedInt :: forall a. (Integral a, Bounded a) => Decoder a
@@ -472,14 +472,14 @@ instance DecodeTOML Double where
       Float x -> pure x
       v -> typeMismatch v
 
-tomlDecoderFrac :: Fractional a => Decoder a
+tomlDecoderFrac :: (Fractional a) => Decoder a
 tomlDecoderFrac = realToFrac <$> tomlDecoder @Double
 
 instance DecodeTOML Float where
   tomlDecoder = tomlDecoderFrac
-instance Integral a => DecodeTOML (Ratio a) where
+instance (Integral a) => DecodeTOML (Ratio a) where
   tomlDecoder = tomlDecoderFrac
-instance HasResolution a => DecodeTOML (Fixed a) where
+instance (HasResolution a) => DecodeTOML (Fixed a) where
   tomlDecoder = tomlDecoderFrac
 
 instance DecodeTOML Char where
@@ -568,46 +568,46 @@ instance DecodeTOML Ordering where
       "GT" -> pure GT
       _ -> makeDecoder $ invalidValue "Invalid Ordering"
 
-instance DecodeTOML a => DecodeTOML (Identity a) where
+instance (DecodeTOML a) => DecodeTOML (Identity a) where
   tomlDecoder = Identity <$> tomlDecoder
 instance DecodeTOML (Proxy a) where
   tomlDecoder = pure Proxy
-instance DecodeTOML a => DecodeTOML (Const a b) where
+instance (DecodeTOML a) => DecodeTOML (Const a b) where
   tomlDecoder = Const <$> tomlDecoder
 
 {- |
 Since TOML doesn't support literal NULLs, this will only ever return 'Just'.
 To get the absence of a field, use 'getFieldOpt' or one of its variants.
 -}
-instance DecodeTOML a => DecodeTOML (Maybe a) where
+instance (DecodeTOML a) => DecodeTOML (Maybe a) where
   tomlDecoder = Just <$> tomlDecoder
 
 instance (DecodeTOML a, DecodeTOML b) => DecodeTOML (Either a b) where
   tomlDecoder = (Right <$> tomlDecoder) <|> (Left <$> tomlDecoder)
 
-instance DecodeTOML a => DecodeTOML (Monoid.First a) where
+instance (DecodeTOML a) => DecodeTOML (Monoid.First a) where
   tomlDecoder = Monoid.First <$> tomlDecoder
-instance DecodeTOML a => DecodeTOML (Monoid.Last a) where
+instance (DecodeTOML a) => DecodeTOML (Monoid.Last a) where
   tomlDecoder = Monoid.Last <$> tomlDecoder
-instance DecodeTOML a => DecodeTOML (Semigroup.First a) where
+instance (DecodeTOML a) => DecodeTOML (Semigroup.First a) where
   tomlDecoder = Semigroup.First <$> tomlDecoder
-instance DecodeTOML a => DecodeTOML (Semigroup.Last a) where
+instance (DecodeTOML a) => DecodeTOML (Semigroup.Last a) where
   tomlDecoder = Semigroup.Last <$> tomlDecoder
-instance DecodeTOML a => DecodeTOML (Semigroup.Max a) where
+instance (DecodeTOML a) => DecodeTOML (Semigroup.Max a) where
   tomlDecoder = Semigroup.Max <$> tomlDecoder
-instance DecodeTOML a => DecodeTOML (Semigroup.Min a) where
+instance (DecodeTOML a) => DecodeTOML (Semigroup.Min a) where
   tomlDecoder = Semigroup.Min <$> tomlDecoder
-instance DecodeTOML a => DecodeTOML (Monoid.Dual a) where
+instance (DecodeTOML a) => DecodeTOML (Monoid.Dual a) where
   tomlDecoder = Monoid.Dual <$> tomlDecoder
 
-instance DecodeTOML a => DecodeTOML [a] where
+instance (DecodeTOML a) => DecodeTOML [a] where
   tomlDecoder = getArrayOf tomlDecoder
 instance (IsString k, Ord k, DecodeTOML v) => DecodeTOML (Map k v) where
   tomlDecoder =
     makeDecoder $ \case
       Table o -> Map.mapKeys (fromString . Text.unpack) <$> mapM (runDecoder tomlDecoder) o
       v -> typeMismatch v
-instance DecodeTOML a => DecodeTOML (NonEmpty a) where
+instance (DecodeTOML a) => DecodeTOML (NonEmpty a) where
   tomlDecoder = maybe raiseEmpty pure . NonEmpty.nonEmpty =<< tomlDecoder
     where
       raiseEmpty = makeDecoder $ invalidValue "Got empty list"
@@ -615,9 +615,9 @@ instance DecodeTOML IntSet where
   tomlDecoder = IntSet.fromList <$> tomlDecoder
 instance (DecodeTOML a, Ord a) => DecodeTOML (Set a) where
   tomlDecoder = Set.fromList <$> tomlDecoder
-instance DecodeTOML a => DecodeTOML (IntMap a) where
+instance (DecodeTOML a) => DecodeTOML (IntMap a) where
   tomlDecoder = IntMap.fromList <$> tomlDecoder
-instance DecodeTOML a => DecodeTOML (Seq a) where
+instance (DecodeTOML a) => DecodeTOML (Seq a) where
   tomlDecoder = Seq.fromList <$> tomlDecoder
 
 tomlDecoderTuple :: ([Value] -> Maybe (DecodeM a)) -> Decoder a
@@ -625,7 +625,7 @@ tomlDecoderTuple f =
   makeDecoder $ \case
     Array vs | Just decodeM <- f vs -> decodeM
     v -> typeMismatch v
-decodeElem :: DecodeTOML a => Int -> Value -> DecodeM a
+decodeElem :: (DecodeTOML a) => Int -> Value -> DecodeM a
 decodeElem i v = addContextItem (Index i) (runDecoder tomlDecoder v)
 instance DecodeTOML () where
   tomlDecoder = tomlDecoderTuple $ \case

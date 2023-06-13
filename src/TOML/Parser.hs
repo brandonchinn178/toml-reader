@@ -752,7 +752,7 @@ isUnicodeScalar code = (0x0 <= code && code <= 0xD7FF) || (0xE000 <= code && cod
 parseSignRaw :: Parser Text
 parseSignRaw = optionalOr "" (string "-" <|> string "+")
 
-parseSign :: Num a => Parser (a -> a)
+parseSign :: (Num a) => Parser (a -> a)
 parseSign = do
   sign <- parseSignRaw
   pure $ if sign == "-" then negate else id
@@ -853,7 +853,7 @@ readBin = foldl' go 0 . Text.unpack
             | otherwise = error $ "readBin got unexpected digit: " <> show x
        in 2 * acc + digit
 
-runReader :: Show a => ReadS a -> Text -> a
+runReader :: (Show a) => ReadS a -> Text -> a
 runReader rdr digits =
   case rdr $ Text.unpack digits of
     [(x, "")] -> x

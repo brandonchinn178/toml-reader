@@ -44,5 +44,5 @@ renderValue = \case
   where
     renderKeyValue (k, v) = showT k <> ": " <> renderValue v
 
-    showT :: Show a => a -> Text
+    showT :: (Show a) => a -> Text
     showT = Text.pack . show
