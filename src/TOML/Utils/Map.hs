@@ -12,27 +12,26 @@ import qualified Data.Map.Strict as Map
 
 import TOML.Utils.NonEmpty (zipHistory)
 
-{- |
-For a non-empty list of keys, iterate through the given 'Map' and return
-the possibly missing value at the path and a function to set the value at
-the given path and return the modified input 'Map'.
-
-@
-let obj = undefined -- { "a": { "b": { "c": 1 } } }
-(mValue, setValue) <- getPathLens doRecurse ["a", "b", "c"] obj
-
-print mValue -- Just 1
-print (setValue 2) -- { "a": { "b": { "c": 2 } } }
-@
--}
+-- |
+-- For a non-empty list of keys, iterate through the given 'Map' and return
+-- the possibly missing value at the path and a function to set the value at
+-- the given path and return the modified input 'Map'.
+--
+-- @
+-- let obj = undefined -- { "a": { "b": { "c": 1 } } }
+-- (mValue, setValue) <- getPathLens doRecurse ["a", "b", "c"] obj
+--
+-- print mValue -- Just 1
+-- print (setValue 2) -- { "a": { "b": { "c": 2 } } }
+-- @
 getPathLens ::
   (Monad m, Ord k) =>
-  -- | How to get and set the next Map from the possibly missing value.
+  (NonEmpty k -> Maybe v -> m (Map k v, Map k v -> v))
+  -- ^ How to get and set the next Map from the possibly missing value.
   -- Passes in the path taken so far.
-  (NonEmpty k -> Maybe v -> m (Map k v, Map k v -> v)) ->
-  NonEmpty k ->
-  Map k v ->
-  m (Maybe v, v -> Map k v)
+  -> NonEmpty k
+  -> Map k v
+  -> m (Maybe v, v -> Map k v)
 getPathLens =
   getPathLensWith (\setVal fromMap -> mkSetter (setVal . fromMap)) (mkSetter id)
   where
@@ -41,10 +40,10 @@ getPathLens =
 -- | Same as 'getPathLens', except without the setter.
 getPath ::
   (Monad m, Ord k) =>
-  (NonEmpty k -> Maybe v -> m (Map k v)) ->
-  NonEmpty k ->
-  Map k v ->
-  m (Maybe v)
+  (NonEmpty k -> Maybe v -> m (Map k v))
+  -> NonEmpty k
+  -> Map k v
+  -> m (Maybe v)
 getPath doRecurse path originalMap =
   fst <$> getPathLensWith (\_ _ _ _ -> ()) (\_ _ -> ()) doRecurse' path originalMap
   where
@@ -54,12 +53,12 @@ getPath doRecurse path originalMap =
 
 getPathLensWith ::
   (Monad m, Ord k) =>
-  (b -> a -> (k -> Map k v -> b)) ->
-  (k -> Map k v -> b) ->
-  (NonEmpty k -> Maybe v -> m (Map k v, a)) ->
-  NonEmpty k ->
-  Map k v ->
-  m (Maybe v, b)
+  (b -> a -> (k -> Map k v -> b))
+  -> (k -> Map k v -> b)
+  -> (NonEmpty k -> Maybe v -> m (Map k v, a))
+  -> NonEmpty k
+  -> Map k v
+  -> m (Maybe v, b)
 getPathLensWith mkAnn mkFirstAnn doRecurse path originalMap =
   let (_, k) :| ks = zipHistory path
    in foldlM go (buildLens k mkFirstAnn originalMap) ks
