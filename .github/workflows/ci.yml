@@ -27,9 +27,10 @@ jobs:
       STACK_YAML: ${{ matrix.stack_yaml }}
 
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Install toml-test
+      -
+        uses: actions/checkout@v3
+      -
+        name: Install toml-test
         env:
           TOML_TEST_VERSION: '1.2.0'
         run: |
@@ -39,21 +40,23 @@ jobs:
           gunzip toml-test.gz
           chmod +x toml-test
           mv toml-test /usr/local/bin/
-
-      - uses: actions/cache@v3
+      -
+        uses: actions/cache@v3
         with:
           path: ~/.stack
           key: ${{ runner.os }}-stack-cache-${{ hashFiles(matrix.stack_yaml, 'package.yaml') }}
-      - name: Build + test
+      -
+        name: Build + test
         run: stack test --coverage
-
-      - name: Check that Cabal file was generated
+      -
+        name: Check that Cabal file was generated
         run: git diff --exit-code '*.cabal'
-
       # upload coverage data
-      - name: Generate coverage data
+      -
+        name: Generate coverage data
         run: stack install hpc-lcov && hpc-lcov
-      - uses: codecov/codecov-action@v2
+      -
+        uses: codecov/codecov-action@v2
         with:
           files: lcov.info
         if: ${{ matrix.latest }}
@@ -63,33 +66,37 @@ jobs:
     env:
       FOURMOLU_VERSION: '0.7.0.1'
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Install fourmolu
+      -
+        uses: actions/checkout@v3
+      -
+        name: Install fourmolu
         run: |
           curl -sSL \
             "https://github.com/fourmolu/fourmolu/releases/download/v${FOURMOLU_VERSION}/fourmolu-${FOURMOLU_VERSION}-linux-x86_64" \
             -o /usr/local/bin/fourmolu
           chmod +x /usr/local/bin/fourmolu
-      - name: Run fourmolu
+      -
+        name: Run fourmolu
         run: fourmolu -m check $(git ls-files '*.hs')
 
   check_sdist:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/cache@v3
+      -
+        uses: actions/checkout@v3
+      -
+        uses: actions/cache@v3
         with:
           path: ~/.stack
           key: ${{ runner.os }}-check_sdist-${{ hashFiles('stack.yaml') }}
-
-      - name: Strip unreleased section from CHANGELOG
+      -
+        name: Strip unreleased section from CHANGELOG
         run: sed -i -n '/^## Unreleased/d; /^## /,$p' CHANGELOG.md
-
-      - name: Create sdist bundle
+      -
+        name: Create sdist bundle
         run: stack sdist --test-tarball --tar-dir .
-
-      - uses: actions/upload-artifact@v3
+      -
+        uses: actions/upload-artifact@v3
         with:
           name: toml-reader-sdist
           path: toml-reader-*.tar.gz
