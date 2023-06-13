@@ -25,6 +25,7 @@ import TOML.Parser (parseTOML)
 import qualified Data.Aeson.Key as Key
 import Data.Aeson.KeyMap (KeyMap)
 import qualified Data.Aeson.KeyMap as KeyMap
+import Data.HashMap.Lazy ()
 #else
 import qualified Data.HashMap.Lazy as HashMap
 #endif
