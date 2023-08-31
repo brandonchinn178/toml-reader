@@ -28,7 +28,7 @@ library:
   dependencies:
     - base >= 4.15 && < 5
     - containers < 0.7
-    - megaparsec < 9.5
+    - megaparsec < 10
     - parser-combinators < 1.4
     - text < 3
     - time < 1.13
