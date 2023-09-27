@@ -27,7 +27,7 @@ library:
   source-dirs: src
   dependencies:
     - base >= 4.15 && < 5
-    - containers < 0.7
+    - containers < 0.8
     - megaparsec < 10
     - parser-combinators < 1.4
     - text < 3
