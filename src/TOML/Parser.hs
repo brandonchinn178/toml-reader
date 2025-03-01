@@ -22,7 +22,10 @@ import Control.Monad.Combinators.NonEmpty (sepBy1)
 import Data.Bifunctor (bimap)
 import Data.Char (chr, isDigit, isSpace, ord)
 import Data.Fixed (Fixed (..))
-import Data.Foldable (foldl', foldlM)
+import Data.Foldable (foldlM)
+#if !MIN_VERSION_base(4,20,0)
+import Data.Foldable (foldl')
+#endif
 import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
