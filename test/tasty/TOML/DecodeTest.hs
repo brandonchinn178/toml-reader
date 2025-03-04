@@ -241,7 +241,7 @@ decoderInstanceTests =
         decodeWith (getField @(Int, Double) "a") "a = [1, 2.5]" @?= Right (1, 2.5)
     , testCase "Map" $
         decodeWith (getField @(Map Text.Text Int) "a") "a = {x = 1, y = 2}"
-          @?= Right (Map.fromList [("x",1), ("y",2)])
+          @?= Right (Map.fromList [("x", 1), ("y", 2)])
     , testCase "Tuples show errors with index" $
         case decodeWith (getField @(Int, Double) "a") "a = [1, true]" of
           Left (DecodeError [Key "a", Index 1] _) -> return ()
