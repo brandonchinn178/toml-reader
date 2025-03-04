@@ -29,6 +29,7 @@ module TOML.Decode (
   getFieldOptWith,
   getFieldsOptWith,
   getArrayOf,
+  getTableOf,
 
   -- ** Build custom Decoder
   DecodeM (..),
@@ -600,7 +601,7 @@ instance (DecodeTOML a) => DecodeTOML (Monoid.Dual a) where
 instance (DecodeTOML a) => DecodeTOML [a] where
   tomlDecoder = getArrayOf tomlDecoder
 instance (IsString k, Ord k, DecodeTOML v) => DecodeTOML (Map k v) where
-  tomlDecoder = fmap (Map.mapKeys (fromString . Text.unpack)) $ getTableOf tomlDecoder
+  tomlDecoder = Map.mapKeys (fromString . Text.unpack) <$> getTableOf tomlDecoder
 instance (DecodeTOML a) => DecodeTOML (NonEmpty a) where
   tomlDecoder = maybe raiseEmpty pure . NonEmpty.nonEmpty =<< tomlDecoder
     where
