@@ -391,6 +391,15 @@ getArrayOf decoder =
     Array vs -> zipWithM (\i -> addContextItem (Index i) . runDecoder decoder) [0 ..] vs
     v -> typeMismatch v
 
+-- |
+-- Decode a table of values using a given 'Decoder', returning the
+-- results as a 'Text'-indexed 'Map'.
+getTableOf :: Decoder a -> Decoder (Map Text a)
+getTableOf decoder =
+  makeDecoder $ \case
+    Table t -> Map.traverseWithKey (\k -> addContextItem (Key k) . runDecoder decoder) t
+    v -> typeMismatch v
+
 {--- DecodeTOML ---}
 
 -- |
@@ -591,10 +600,7 @@ instance (DecodeTOML a) => DecodeTOML (Monoid.Dual a) where
 instance (DecodeTOML a) => DecodeTOML [a] where
   tomlDecoder = getArrayOf tomlDecoder
 instance (IsString k, Ord k, DecodeTOML v) => DecodeTOML (Map k v) where
-  tomlDecoder =
-    makeDecoder $ \case
-      Table o -> Map.mapKeys (fromString . Text.unpack) <$> mapM (runDecoder tomlDecoder) o
-      v -> typeMismatch v
+  tomlDecoder = fmap (Map.mapKeys (fromString . Text.unpack)) $ getTableOf tomlDecoder
 instance (DecodeTOML a) => DecodeTOML (NonEmpty a) where
   tomlDecoder = maybe raiseEmpty pure . NonEmpty.nonEmpty =<< tomlDecoder
     where

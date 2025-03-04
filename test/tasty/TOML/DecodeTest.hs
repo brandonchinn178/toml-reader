@@ -5,6 +5,8 @@
 module TOML.DecodeTest (test) where
 
 import Data.Int (Int8)
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Data.Time as Time
 import Numeric.Natural (Natural)
@@ -237,9 +239,16 @@ decoderInstanceTests =
         decodeWith (getField @() "a") "a = []" @?= Right ()
     , testCase "(a, b)" $
         decodeWith (getField @(Int, Double) "a") "a = [1, 2.5]" @?= Right (1, 2.5)
+    , testCase "Map" $
+        decodeWith (getField @(Map Text.Text Int) "a") "a = {x = 1, y = 2}"
+          @?= Right (Map.fromList [("x",1), ("y",2)])
     , testCase "Tuples show errors with index" $
         case decodeWith (getField @(Int, Double) "a") "a = [1, true]" of
           Left (DecodeError [Key "a", Index 1] _) -> return ()
+          result -> unexpectedResult result
+    , testCase "Maps show errors with key" $
+        case decodeWith (getField @(Map Text.Text Int) "a") "a = {x = true}" of
+          Left (DecodeError [Key "a", Key "x"] _) -> return ()
           result -> unexpectedResult result
     ]
   where
