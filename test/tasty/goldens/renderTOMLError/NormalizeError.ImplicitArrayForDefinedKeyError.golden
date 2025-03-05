@@ -1,3 +1,0 @@
-Could not create implicit array at path "a.b":
-  Existing value: [true]
-  Array table section: {"a": 1}

@@ -1,3 +1,0 @@
-Found non-Table at path "a" when initializing implicit array at path "a.b":
-  Existing value: true
-  Array table section: {"a": 1}

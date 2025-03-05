@@ -11,7 +11,7 @@ maintainer: Brandon Chinn <brandonchinn178@gmail.com>
 extra-source-files:
   - README.md
   - CHANGELOG.md
-  - test/**/*.golden
+  - test/**/*.snap.md
 
 github: brandonchinn178/toml-reader
 
@@ -22,7 +22,7 @@ ghc-options:
   - -Wincomplete-uni-patterns
   - -Wnoncanonical-monad-instances
   - -Wunused-packages
-default-language: GHC2021
+language: GHC2021
 
 library:
   source-dirs: src
@@ -37,13 +37,14 @@ library:
 tests:
   toml-reader-tests:
     main: Main.hs
-    source-dirs: test/tasty
+    source-dirs: test/specs
+    ghc-options: -F -pgmF skeletest-preprocessor
+    build-tools:
+      - skeletest:skeletest-preprocessor
     dependencies:
       - base
       - containers
-      - tasty
-      - tasty-golden
-      - tasty-hunit
+      - skeletest
       - text
       - time
       - toml-reader
