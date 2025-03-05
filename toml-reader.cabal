@@ -57,7 +57,7 @@ library
     , parser-combinators
     , text
     , time
-  default-language: Haskell2010
+  default-language: GHC2021
 
 test-suite parser-validator
   type: exitcode-stdio-1.0
@@ -79,7 +79,7 @@ test-suite parser-validator
     , toml-reader
     , unordered-containers
     , vector
-  default-language: Haskell2010
+  default-language: GHC2021
 
 test-suite toml-reader-tests
   type: exitcode-stdio-1.0
@@ -103,4 +103,4 @@ test-suite toml-reader-tests
     , text
     , time
     , toml-reader
-  default-language: Haskell2010
+  default-language: GHC2021

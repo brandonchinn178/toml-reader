@@ -3,11 +3,11 @@
 module TOML.ErrorTest (test) where
 
 import Control.Monad (unless)
-import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Map.Strict as Map
-import qualified Data.Text as Text
-import qualified Data.Text.Lazy as TextL
-import qualified Data.Text.Lazy.Encoding as TextL
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict qualified as Map
+import Data.Text qualified as Text
+import Data.Text.Lazy qualified as TextL
+import Data.Text.Lazy.Encoding qualified as TextL
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Golden
 import Test.Tasty.HUnit

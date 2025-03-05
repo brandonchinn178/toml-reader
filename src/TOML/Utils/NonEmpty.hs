@@ -6,7 +6,7 @@ module TOML.Utils.NonEmpty (
 
 import Data.List (scanl')
 import Data.List.NonEmpty (NonEmpty ((:|)))
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 
 -- |
 -- Annotates each element with the history of all past elements.

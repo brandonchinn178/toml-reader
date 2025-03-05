@@ -52,30 +52,30 @@ import Data.Fixed (Fixed, HasResolution)
 import Data.Functor.Identity (Identity (..))
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.IntMap (IntMap)
-import qualified Data.IntMap as IntMap
+import Data.IntMap qualified as IntMap
 import Data.IntSet (IntSet)
-import qualified Data.IntSet as IntSet
+import Data.IntSet qualified as IntSet
 import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
-import qualified Data.Map.Strict as Map
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
-import qualified Data.Monoid as Monoid
+import Data.Monoid qualified as Monoid
 import Data.Proxy (Proxy (..))
 import Data.Ratio (Ratio)
-import qualified Data.Semigroup as Semigroup
+import Data.Semigroup qualified as Semigroup
 import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
+import Data.Sequence qualified as Seq
 import Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.String (IsString, fromString)
 import Data.Text (Text)
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
-import qualified Data.Text.Lazy as Lazy (Text)
-import qualified Data.Text.Lazy as Text.Lazy
-import qualified Data.Time as Time
-import qualified Data.Time.Clock.System as Time
+import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
+import Data.Text.Lazy qualified as Lazy (Text)
+import Data.Text.Lazy qualified as Text.Lazy
+import Data.Time qualified as Time
+import Data.Time.Clock.System qualified as Time
 import Data.Version (Version, parseVersion)
 import Data.Void (Void)
 import Data.Word (Word16, Word32, Word64, Word8)

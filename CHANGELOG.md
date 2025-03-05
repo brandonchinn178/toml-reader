@@ -1,5 +1,7 @@
 ## Unreleased
 
+* Drop support for GHC < 9.8
+
 ## v0.2.2.0
 
 * Add support for GHC 9.10 + 9.12

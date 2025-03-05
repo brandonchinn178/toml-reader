@@ -8,7 +8,7 @@ module TOML.Utils.Map (
 import Data.Foldable (foldlM)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import Data.Map.Strict qualified as Map
 
 import TOML.Utils.NonEmpty (zipHistory)
 
