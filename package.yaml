@@ -1,5 +1,5 @@
 name: toml-reader
-version: 0.2.1.0
+version: 0.2.2.0
 category: TOML, Text, Configuration
 synopsis: TOML format parser compliant with v1.0.0.
 description: TOML format parser compliant with v1.0.0. See README.md for more details.
