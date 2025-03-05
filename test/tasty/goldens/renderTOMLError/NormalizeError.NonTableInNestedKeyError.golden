@@ -1,3 +1,0 @@
-Found non-Table at path "a" when defining nested key "a.b":
-  Existing value: true
-  Original value: 1

@@ -1,16 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module TOML.ErrorTest (test) where
+module TOML.ErrorSpec (spec) where
 
-import Control.Monad (unless)
+import Control.Monad (forM_)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
-import Data.Text qualified as Text
-import Data.Text.Lazy qualified as TextL
-import Data.Text.Lazy.Encoding qualified as TextL
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.Golden
-import Test.Tasty.HUnit
+import Skeletest
+import Skeletest.Predicate qualified as P
 
 import TOML.Error (
   ContextItem (..),
@@ -21,28 +17,16 @@ import TOML.Error (
  )
 import TOML.Value (Value (..))
 
-test :: TestTree
-test =
-  testGroup
-    "TOML.Error"
-    [ renderTOMLErrorTests
-    ]
+spec :: Spec
+spec = do
+  describe "renderTOMLError" $ do
+    forM_ allErrors $ \(label, e) ->
+      it ("renders " <> label) $ do
+        renderTOMLError e `shouldSatisfy` P.matchesSnapshot
 
-renderTOMLErrorTests :: TestTree
-renderTOMLErrorTests =
-  testGroup
-    "renderTOMLError"
-    [ testGroup "renders errors correctly" $
-        flip map allErrors $ \(label, e) ->
-          goldenVsString label ("test/tasty/goldens/renderTOMLError/" <> label <> ".golden") $
-            pure (TextL.encodeUtf8 . TextL.fromStrict . renderTOMLError $ e)
-    , testCase "renders context items correctly" $ do
-        let msg = renderTOMLError (DecodeError [Key "a", Index 1, Key "b"] MissingField)
-        let expectedPrefix = "Decode error at '.a[1].b':"
-        unless (expectedPrefix `Text.isPrefixOf` msg) $
-          assertFailure $
-            "Expected message to start with prefix: " <> show expectedPrefix <> ", got: " <> Text.unpack msg
-    ]
+    it "renders context items correctly" $ do
+      let msg = renderTOMLError (DecodeError [Key "a", Index 1, Key "b"] MissingField)
+      msg `shouldSatisfy` P.hasPrefix "Decode error at '.a[1].b':"
   where
     allErrors =
       [ ("ParseError", ParseError "megaparsec error")

@@ -2,3 +2,9 @@ packages: .
 
 program-options
   ghc-options: -Werror
+
+-- TODO: remove when packages updated for GHC 9.12
+allow-newer:
+  , recover-rtti:base
+  , recover-rtti:ghc-heap
+  , recover-rtti:ghc-prim
