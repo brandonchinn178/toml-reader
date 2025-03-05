@@ -1,5 +1,11 @@
 ## Unreleased
 
+## v0.2.2.0
+
+* Add support for GHC 9.10 + 9.12
+* Fix context when decoding `Map`
+* Add `getTableOf`
+
 ## v0.2.1.0
 
 * Drop support for GHC < 9.0
