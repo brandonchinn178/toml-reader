@@ -1,10 +1,10 @@
 import Test.Tasty
 
-import qualified TOML.DecodeTest
-import qualified TOML.ErrorTest
-import qualified TOML.ParserTest
-import qualified TOML.Utils.MapTest
-import qualified TOML.Utils.NonEmptyTest
+import TOML.DecodeTest qualified
+import TOML.ErrorTest qualified
+import TOML.ParserTest qualified
+import TOML.Utils.MapTest qualified
+import TOML.Utils.NonEmptyTest qualified
 
 main :: IO ()
 main =

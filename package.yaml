@@ -22,6 +22,7 @@ ghc-options:
   - -Wincomplete-uni-patterns
   - -Wnoncanonical-monad-instances
   - -Wunused-packages
+default-language: GHC2021
 
 library:
   source-dirs: src

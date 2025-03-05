@@ -2,7 +2,7 @@
 
 module TOML.ParserTest (test) where
 
-import qualified Data.Map.Strict as Map
+import Data.Map.Strict qualified as Map
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
 

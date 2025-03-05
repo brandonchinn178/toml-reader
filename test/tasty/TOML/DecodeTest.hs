@@ -6,9 +6,9 @@ module TOML.DecodeTest (test) where
 
 import Data.Int (Int8)
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import qualified Data.Text as Text
-import qualified Data.Time as Time
+import Data.Map.Strict qualified as Map
+import Data.Text qualified as Text
+import Data.Time qualified as Time
 import Numeric.Natural (Natural)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit

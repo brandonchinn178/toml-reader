@@ -13,9 +13,9 @@ module TOML.Error (
 
 import Control.Exception (Exception (..))
 import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text (Text)
-import qualified Data.Text as Text
+import Data.Text qualified as Text
 
 import TOML.Value (Table, Value (..), renderValue)
 

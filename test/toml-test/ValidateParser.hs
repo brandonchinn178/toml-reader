@@ -3,15 +3,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Data.Aeson ((.=))
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy.Char8 as Char8
+import Data.Aeson qualified as Aeson
+import Data.ByteString.Lazy.Char8 qualified as Char8
 import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import Data.Text (Text)
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
+import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
 import Data.Time (ZonedTime (..))
-import qualified Data.Vector as Vector
+import Data.Vector qualified as Vector
 import System.Directory (findExecutable)
 import System.Environment (getArgs, getExecutablePath)
 import System.Exit (exitFailure)

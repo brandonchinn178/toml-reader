@@ -1,6 +1,6 @@
 module TOML.Utils.NonEmptyTest (test) where
 
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
 

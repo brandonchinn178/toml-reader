@@ -28,19 +28,19 @@ import Data.Foldable (foldl')
 #endif
 import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
-import qualified Data.Text as Text
+import Data.Text qualified as Text
 import Data.Time (Day, LocalTime, TimeOfDay, TimeZone)
-import qualified Data.Time as Time
+import Data.Time qualified as Time
 import Data.Void (Void)
-import qualified Numeric
+import Numeric qualified
 import Text.Megaparsec hiding (sepBy1)
 import Text.Megaparsec.Char hiding (space, space1)
-import qualified Text.Megaparsec.Char.Lexer as L
+import Text.Megaparsec.Char.Lexer qualified as L
 
 import TOML.Error (NormalizeError (..), TOMLError (..))
 import TOML.Utils.Map (getPathLens)
