@@ -554,9 +554,10 @@ mergeTableSectionTable sectionKey table baseTable =
       ValueAtPathOptions
         { shouldRecurse = \case
             InlineTable -> False
-            ImplicitKey -> False
+            ImplicitKey -> True
             ExplicitSection -> True
             ImplicitSection -> True
+        , recurseArray = True
         , implicitType = ImplicitSection
         , makeMidPathNotTableError = nonTableInNestedKeyError sectionKey table
         }
@@ -609,9 +610,10 @@ mergeTableSectionArray sectionKey table baseTable = do
       ValueAtPathOptions
         { shouldRecurse = \case
             InlineTable -> False
-            ImplicitKey -> False
+            ImplicitKey -> True
             ExplicitSection -> True
             ImplicitSection -> True
+        , recurseArray = True
         , implicitType = ImplicitSection
         , makeMidPathNotTableError = \history existingValue ->
             NonTableInNestedImplicitArrayError
@@ -643,6 +645,7 @@ mergeRawTable MergeOptions{..} baseTable table = foldlM insertRawValue baseTable
                   ImplicitKey -> True
                   ExplicitSection -> True
                   ImplicitSection -> recurseImplicitSections
+              , recurseArray = False
               , implicitType = ImplicitKey
               , makeMidPathNotTableError = nonTableInNestedKeyError key table
               }
@@ -674,6 +677,7 @@ mergeRawTable MergeOptions{..} baseTable table = foldlM insertRawValue baseTable
 
 data ValueAtPathOptions = ValueAtPathOptions
   { shouldRecurse :: TableType -> Bool
+  , recurseArray :: Bool
   , implicitType :: TableType
   , makeMidPathNotTableError :: Key -> AnnValue -> NormalizeError
   }
@@ -716,7 +720,8 @@ setValueAtPath ValueAtPathOptions{..} fullKey initialTable f = do
       --   Any reference to an array of tables points to the
       --   most recently defined table element of the array.
       Just (GenericArray aMeta vs)
-        | Just vs' <- NonEmpty.nonEmpty vs
+        | recurseArray
+        , Just vs' <- NonEmpty.nonEmpty vs
         , GenericTable tMeta subTable <- NonEmpty.last vs' -> do
             when (isStaticArray aMeta) $
               normalizeError $

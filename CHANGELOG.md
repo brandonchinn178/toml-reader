@@ -1,6 +1,9 @@
 ## Unreleased
 
 * Drop support for GHC < 9.8
+* Fix compatibility with toml-test 1.5.0
+    * Allow specifying new table section in dotted table path
+    * Error when setting dotted path inside array
 
 ## v0.2.2.0
 
