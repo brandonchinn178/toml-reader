@@ -52,8 +52,10 @@ runTomlTest args = do
       -- don't error, so that Hackage's test run doesn't fail
       putStrLn "WARNING: toml-test not installed. Skipping test suite..."
     Just tomlTestExe ->
+      -- don't run in parallel, in case we're running tests with coverage, which
+      -- behaves poorly if multiple processes try to read/write .tix files
       callProcess tomlTestExe $
-        args ++ ["-color", "always", "--", thisExe, "--check"]
+        args ++ ["-color", "always", "-parallel", "1", "--", thisExe, "--check"]
 
 -- | Parse TOML data in stdin.
 checkTOML :: IO ()

@@ -7,7 +7,7 @@ on:
   workflow_call:
 
 env:
-  TOML_TEST_VERSION: '1.2.0'
+  TOML_TEST_VERSION: '1.5.0'
 
 jobs:
   build_and_test:
@@ -20,7 +20,7 @@ jobs:
       -
         name: Install toml-test
         run: |
-          curl -fsSL "https://github.com/BurntSushi/toml-test/releases/download/v${TOML_TEST_VERSION}/toml-test-v${TOML_TEST_VERSION}-linux-amd64.gz" \
+          curl -fsSL "https://github.com/toml-lang/toml-test/releases/download/v${TOML_TEST_VERSION}/toml-test-v${TOML_TEST_VERSION}-linux-amd64.gz" \
             | gunzip \
             > /usr/local/bin/toml-test
           chmod +x /usr/local/bin/toml-test
